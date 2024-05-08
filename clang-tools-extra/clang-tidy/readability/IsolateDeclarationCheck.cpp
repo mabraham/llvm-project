@@ -77,6 +77,15 @@ static int countIndirections(const Type *T, int Indirections = 0) {
   return Indirections;
 }
 
+static bool typeIsCharPointer(const Type *T)
+{
+    if (isa<PointerType>(T))
+    {
+        return T->getPointeeType().getTypePtr()->isCharType();
+    }
+    return false;
+}
+
 static bool typeIsMemberPointer(const Type *T) {
   if (isa<ArrayType>(T))
     return typeIsMemberPointer(T->getArrayElementTypeNoTypeQual());
@@ -127,6 +136,12 @@ declRanges(const DeclStmt *DS, const SourceManager &SM,
 
   if (FirstDecl == nullptr)
     return std::nullopt;
+
+  // Only act on declarations like 'const char *a_fn, *b_fn;'
+  if (!typeIsCharPointer(FirstDecl->getType().IgnoreParens().getTypePtr()))
+  {
+      return std::nullopt;
+  }
 
   // FIXME: Member pointers are not transformed correctly right now, that's
   // why they are treated as problematic here.
