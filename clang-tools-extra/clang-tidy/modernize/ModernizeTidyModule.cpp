@@ -11,6 +11,7 @@
 #include "../ClangTidyModuleRegistry.h"
 #include "AvoidBindCheck.h"
 #include "AvoidCArraysCheck.h"
+#include "CStringToStdFilenameCheck.h"
 #include "ConcatNestedNamespacesCheck.h"
 #include "DeprecatedHeadersCheck.h"
 #include "DeprecatedIosBaseAliasesCheck.h"
@@ -55,6 +56,8 @@ namespace modernize {
 class ModernizeModule : public ClangTidyModule {
 public:
   void addCheckFactories(ClangTidyCheckFactories &CheckFactories) override {
+    CheckFactories.registerCheck<CStringToStdFilenameCheck>(
+        "modernize-C-string-to-std-filename");
     CheckFactories.registerCheck<AvoidBindCheck>("modernize-avoid-bind");
     CheckFactories.registerCheck<AvoidCArraysCheck>("modernize-avoid-c-arrays");
     CheckFactories.registerCheck<ConcatNestedNamespacesCheck>(

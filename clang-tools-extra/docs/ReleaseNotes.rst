@@ -229,6 +229,11 @@ New checks
   points in a coroutine. Such hostile types include scoped-lockable types and
   types belonging to a configurable denylist.
 
+- New :doc:`modernize-C-string-to-std-filename
+  <clang-tidy/checks/modernize/C-string-to-std-filename>` check.
+
+  FIXME: add release notes.
+
 - New :doc:`modernize-use-constraints
   <clang-tidy/checks/modernize/use-constraints>` check.
 
