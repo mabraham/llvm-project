@@ -9,12 +9,17 @@ class path
 {
 };
 } // namespace filesystem
+template <typename T>
 class optional
 {
 };
 } // namespace std
 
 const char *opt2fn_null(int a, int b);
+
+void g(const char *name);
+// CHECK-FIXES: std::optional<std::filesystem::path> in_trajfile = opt2path_optional(1, 2);
+void g(const std::optional<std::filesystem::path>& name);
 
 void f()
 {
@@ -33,6 +38,9 @@ void f()
     in_trajfile = opt2fn_null(1, 2);
     // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Found opt2fn_null usage to change [modernize-C-string-to-std-filename]
     // CHECK-FIXES: std::optional<std::filesystem::path> in_trajfile = opt2path_optional(1, 2);
+
+    g(in_trajfile);
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Found use of std::optional<std::filesystem::path> in function call to change [modernize-C-string-to-std-filename]
 }
 
 // FIXME: Add something that doesn't trigger the check here.
