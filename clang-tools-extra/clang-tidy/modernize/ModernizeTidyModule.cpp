@@ -19,6 +19,7 @@
 #include "MacroToEnumCheck.h"
 #include "MakeSharedCheck.h"
 #include "MakeUniqueCheck.h"
+#include "Opt2pathOptionalCheck.h"
 #include "PassByValueCheck.h"
 #include "RawStringLiteralCheck.h"
 #include "RedundantVoidArgCheck.h"
@@ -70,6 +71,8 @@ public:
     CheckFactories.registerCheck<MacroToEnumCheck>("modernize-macro-to-enum");
     CheckFactories.registerCheck<MakeSharedCheck>("modernize-make-shared");
     CheckFactories.registerCheck<MakeUniqueCheck>("modernize-make-unique");
+    CheckFactories.registerCheck<Opt2pathOptionalCheck>(
+        "modernize-opt2path-optional");
     CheckFactories.registerCheck<PassByValueCheck>("modernize-pass-by-value");
     CheckFactories.registerCheck<UseStartsEndsWithCheck>(
         "modernize-use-starts-ends-with");

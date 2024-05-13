@@ -18,6 +18,7 @@ add_clang_library(clangTidyModernizeModule
   MakeSmartPtrCheck.cpp
   MakeUniqueCheck.cpp
   ModernizeTidyModule.cpp
+  Opt2pathOptionalCheck.cpp
   PassByValueCheck.cpp
   RawStringLiteralCheck.cpp
   RedundantVoidArgCheck.cpp

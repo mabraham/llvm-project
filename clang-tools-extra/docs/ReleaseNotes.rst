@@ -234,6 +234,11 @@ New checks
 
   FIXME: add release notes.
 
+- New :doc:`modernize-opt2path-optional
+  <clang-tidy/checks/modernize/opt2path-optional>` check.
+
+  FIXME: add release notes.
+
 - New :doc:`modernize-use-constraints
   <clang-tidy/checks/modernize/use-constraints>` check.
 
