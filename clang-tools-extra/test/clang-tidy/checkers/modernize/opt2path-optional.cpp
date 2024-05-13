@@ -21,6 +21,8 @@ void f()
 {
     // Trigger the check
     const char* in_trajfile;
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Don't declare const char* variable that won't be used [modernize-opt2path-optional]
+    // C HECK-FIXES: 
     in_trajfile = opt2fn_null(1, 2);
     // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
     // CHECK-MESSAGES: :[[@LINE-2]]:19: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]

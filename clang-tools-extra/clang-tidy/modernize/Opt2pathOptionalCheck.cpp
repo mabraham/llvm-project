@@ -9,6 +9,7 @@
 #include "Opt2pathOptionalCheck.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Lex/Lexer.h"
 
 using namespace clang::ast_matchers;
 
@@ -31,6 +32,16 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result) {
   if (!MatchedAssignment->getIdentifier() || MatchedAssignment->getName().startswith("awesome_"))
     return;
   */
+  if (const auto *match = Result.Nodes.getNodeAs<VarDecl>("declaration"))
+  {
+      ASTContext *context = Result.Context;
+      SourceLocation semicolon = Lexer::getLocForEndOfToken
+          (match->getLocation(), 0, context->getSourceManager(),
+           context->getLangOpts());
+      diag(match->getBeginLoc(), "Don't declare const char* variable that won't be used")
+          << FixItHint::CreateRemoval(SourceRange(match->getBeginLoc(), match->getEndLoc()))
+          << FixItHint::CreateRemoval(semicolon);
+  }
   {
       const auto *match = Result.Nodes.getNodeAs<CallExpr>("func call")->getCallee();
       diag(match->getBeginLoc(), "Use opt2path_optional instead of opt2fn_null")
