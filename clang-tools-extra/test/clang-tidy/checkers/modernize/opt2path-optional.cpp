@@ -1,6 +1,7 @@
 // RUN: %check_clang_tidy %s modernize-opt2path-optional %t
 
-// Add a mock for compilation
+// Add mocks for compilation to avoid running clang-tidy on the
+// whole of #include <filesystem>, etc.
 namespace std
 {
 namespace filesystem
@@ -15,6 +16,9 @@ class optional
 };
 } // namespace std
 
+int *stderr;
+void fprintf(int *, const char *, const char *);
+
 const char *opt2fn_null(int a, int b);
 
 void f()
@@ -22,7 +26,7 @@ void f()
     // Trigger the check
     const char* in_trajfile;
     // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Don't declare const char* variable that won't be used [modernize-opt2path-optional]
-    // C HECK-FIXES: 
+    // CHECK-FIXES: ;
     in_trajfile = opt2fn_null(1, 2);
     // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
     // CHECK-MESSAGES: :[[@LINE-2]]:19: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
@@ -31,6 +35,9 @@ void f()
     // Code that does not trigger the check
     const char* other;
 
+    fprintf(stderr, "Writing to file %s\n", in_trajfile);
+    // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: fprintf(stderr, "Writing to file %s\n", in_trajfile.value().string().c_str());
 }
 
 // Add things that don't trigger the check here.

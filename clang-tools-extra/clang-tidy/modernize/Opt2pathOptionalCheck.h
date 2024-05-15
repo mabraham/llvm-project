@@ -11,6 +11,9 @@
 
 #include "../ClangTidyCheck.h"
 
+#include <memory>
+#include <string>
+
 namespace clang::tidy::modernize {
 
 /// FIXME: Write a short description.
@@ -18,11 +21,15 @@ namespace clang::tidy::modernize {
 /// For the user-facing documentation see:
 /// http://clang.llvm.org/extra/clang-tidy/checks/modernize/opt2path-optional.html
 class Opt2pathOptionalCheck : public ClangTidyCheck {
-public:
-  Opt2pathOptionalCheck(StringRef Name, ClangTidyContext *Context)
-      : ClangTidyCheck(Name, Context) {}
-  void registerMatchers(ast_matchers::MatchFinder *Finder) override;
-  void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+    public:
+        Opt2pathOptionalCheck(StringRef Name, ClangTidyContext *Context);
+        ~Opt2pathOptionalCheck();
+        void registerMatchers(ast_matchers::MatchFinder *Finder) override;
+        void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+
+    private:
+        class IndexerVisitor;
+        std::unique_ptr<IndexerVisitor> indexer_;
 };
 
 } // namespace clang::tidy::modernize
