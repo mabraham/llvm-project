@@ -19,6 +19,13 @@ class optional
 int *stderr;
 void fprintf(int *, const char *, const char *);
 
+void processFile(int a, const char *filename)
+// CHECK-MESSAGES: :[[@LINE-1]]:25: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
+// CHECK-FIXES: void processFile(int a, const std::optional<std::filesystem::path>& filename)
+{
+    fprintf(stderr, "Working on file %s\n", filename);
+}
+
 const char *opt2fn_null(int a, int b);
 
 void f()
@@ -38,7 +45,11 @@ void f()
     fprintf(stderr, "Writing to file %s\n", in_trajfile);
     // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
     // CHECK-FIXES: fprintf(stderr, "Writing to file %s\n", in_trajfile.value().string().c_str());
-}
+
+    // TODO also check multiple calls to fprintf
+
+    processFile(1, in_trajfile);
+     }
 
 // Add things that don't trigger the check here.
 int *irrelevant_file;

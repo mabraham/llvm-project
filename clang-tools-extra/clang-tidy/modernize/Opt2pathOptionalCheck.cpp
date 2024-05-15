@@ -68,9 +68,17 @@ public:
     return true;
   }
 
-        std::vector<const Expr*> fixCalls(const ast_matchers::MatchFinder::MatchResult &Result,
+        struct FunctionParameterToChange
+        {
+                const FunctionDecl* functionDecl_;
+                size_t parameterIndex_;
+        };
+        
+        std::vector<const Expr*> callsToFix(const ast_matchers::MatchFinder::MatchResult &Result,
                                           const std::string& functionNameToFix,
-                                          const std::string& Function);
+                                          const std::string& variableName);
+        std::vector<FunctionParameterToChange> findFunctionsToChange(const ast_matchers::MatchFinder::MatchResult &Result,
+                                                               const std::string& variableName);
 
     private:
   struct IndexEntry {
@@ -87,9 +95,10 @@ Opt2pathOptionalCheck::Opt2pathOptionalCheck(StringRef Name,
                                              ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context) {}
 
-std::vector<const Expr*> Opt2pathOptionalCheck::IndexerVisitor::fixCalls(const ast_matchers::MatchFinder::MatchResult &Result,
-                                                                         const std::string& functionNameToFix,
-                                                                         const std::string& variableName)
+std::vector<const Expr*>
+Opt2pathOptionalCheck::IndexerVisitor::callsToFix(const ast_matchers::MatchFinder::MatchResult &Result,
+                                                  const std::string& functionNameToFix,
+                                                  const std::string& variableName)
 {
     std::vector<const Expr*> exprsToFix;
     clang::LangOptions langOpts;
@@ -105,8 +114,8 @@ std::vector<const Expr*> Opt2pathOptionalCheck::IndexerVisitor::fixCalls(const a
         }
         for (const CallExpr* call : indexEntry.calls_)
         {
-            const int numArgs = call->getNumArgs();
-            for(int i=0; i < numArgs; i++)
+            const size_t numArgs = call->getNumArgs();
+            for(size_t i=0; i < numArgs; i++)
             {
                 std::string TypeS;
                 llvm::raw_string_ostream s(TypeS);
@@ -122,6 +131,44 @@ std::vector<const Expr*> Opt2pathOptionalCheck::IndexerVisitor::fixCalls(const a
         }
     }
     return exprsToFix;
+}
+
+std::vector<Opt2pathOptionalCheck::IndexerVisitor::FunctionParameterToChange>
+Opt2pathOptionalCheck::IndexerVisitor::findFunctionsToChange(const ast_matchers::MatchFinder::MatchResult &Result,
+                                                             const std::string& variableName)
+{
+    std::vector<FunctionParameterToChange> functionParametersToChange;
+    clang::LangOptions langOpts;
+    langOpts.CPlusPlus = true;
+    clang::PrintingPolicy policy(langOpts);
+    for (const auto& [functionDecl, indexEntry] : index_)
+    {
+        const std::string functionName = functionDecl->getNameInfo().getAsString();
+        if (functionName == "fprintf")
+        {
+            continue;
+        }
+        //fprintf(stderr, "Found a non-fprintf function: %s\n", functionName.c_str());
+        for (const CallExpr* call : indexEntry.calls_)
+        {
+            const size_t numArgs = call->getNumArgs();
+            for(size_t i=0; i < numArgs; i++)
+            {
+                std::string TypeS;
+                llvm::raw_string_ostream s(TypeS);
+                const Expr* argExpr = call->getArg(i);
+                argExpr->printPretty(s, 0, policy);
+                const std::string argumentString = s.str();
+                //                fprintf(stderr, "arg: %s\n", argumentString.c_str());
+                if (argumentString == variableName)
+                {
+                    //fprintf(stderr, "Found a use of variable named %s in function %s\n", variableName.c_str(), functionName.c_str());
+                    functionParametersToChange.push_back({functionDecl, i});
+                }
+            }
+        }
+    }
+    return functionParametersToChange;
 }
 
 void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
@@ -158,11 +205,22 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
           indexer_ = std::make_unique<IndexerVisitor>(*Result.Context);
       }
       const std::string variableName = match->getNameInfo().getAsString();
-      const auto exprsToFix = indexer_->fixCalls(Result, "fprintf", variableName);
-      for (const auto& exprToFix : exprsToFix)
+      const std::vector<const Expr*> callsToFix = indexer_->callsToFix(Result, "fprintf", variableName);
+      for (const auto& callToFix : callsToFix)
       {
-          diag(exprToFix->getEndLoc(), "Get C string from std::optional<std::filesystem::path>")
-              << FixItHint::CreateReplacement(exprToFix->getSourceRange(), variableName + ".value().string().c_str()");
+          diag(callToFix->getEndLoc(), "Get C string from std::optional<std::filesystem::path>")
+              << FixItHint::CreateReplacement(callToFix->getSourceRange(), variableName + ".value().string().c_str()");
+      }
+      // Find all other functions that receive variableName as an argument
+      const std::vector<Opt2pathOptionalCheck::IndexerVisitor::FunctionParameterToChange> functionParametersToFix =
+          indexer_->findFunctionsToChange(Result, variableName);
+      std::vector<std::string> parametersToChange;
+      for (const auto& functionParameterToFix : functionParametersToFix)
+      {
+          const ParmVarDecl* parameter = functionParameterToFix.functionDecl_->getParamDecl(functionParameterToFix.parameterIndex_);
+          parametersToChange.emplace_back(parameter->getNameAsString());
+          diag(parameter->getBeginLoc(), "Change function parameter to const std::optional<std::filesystem::path>&")
+              << FixItHint::CreateReplacement(parameter->getSourceRange(), "const std::optional<std::filesystem::path>& " + parametersToChange.back());
       }
   }
 }
