@@ -26,6 +26,15 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
         ~Opt2pathOptionalCheck();
         void registerMatchers(ast_matchers::MatchFinder *Finder) override;
         void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+        void updateVariableWithinFunction(const ast_matchers::MatchFinder::MatchResult &Result,
+                                          const std::string& variableName,
+                                          const FunctionDecl* functionDecl,
+                                          bool toOptionalPath);
+        void updateFunctionDeclaration(const ast_matchers::MatchFinder::MatchResult &Result,
+                                       const std::string& variableName,
+                                       const FunctionDecl* functionDeclToChange,
+                                       size_t parameterIndex,
+                                       bool toOptionalPath);
 
     private:
         class IndexerVisitor;
