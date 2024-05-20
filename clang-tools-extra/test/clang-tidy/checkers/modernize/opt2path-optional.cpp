@@ -62,6 +62,7 @@ struct StructWithConstructorTakingPath
 };
 
 const char *opt2fn_null(int a, int b);
+const char *ftp2fn_null(int a, int b);
 
 void f()
 {
@@ -114,6 +115,14 @@ void f()
     }
 
     StructWithConstructorTakingPath obj(in_trajfile);
+
+    const char* ftpfile;
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Don't declare const char* variable that won't be used [modernize-opt2path-optional]
+    // CHECK-FIXES: ;
+    ftpfile = ftp2fn_null(3, 5);
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-MESSAGES: :[[@LINE-2]]:15: warning: Use ftp2path_optional instead of ftp2fn_null [modernize-opt2path-optional]
+    // CHECK-FIXES: std::optional<std::filesystem::path> ftpfile = ftp2path_optional(3, 5);
 }
 
 // Add things that don't trigger the check here.

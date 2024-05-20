@@ -26,14 +26,16 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
          (isAssignmentOperator(),
           hasOperands
           (declRefExpr(to(varDecl().bind("declaration"))).bind("variable name"),
-           callExpr(hasDeclaration(functionDecl(hasName("opt2fn_null")))).bind("call of opt2fn_null")))/*.bind("assignment")*/,
+           callExpr(hasDeclaration(functionDecl(anyOf(hasName("opt2fn_null"),
+                                                      hasName("ftp2fn_null"))))).bind("call of opt2fn_null"))),
          this);
     // Note that this matcher must follow the previous one, which
     // matches the same fragment in a more specific way. It seems to be
     // OK that the binding uses the same string ID as the above match.
     Finder->addMatcher(callExpr
                        (forEachArgumentWithParam
-                        (callExpr(hasDeclaration(functionDecl(hasName("opt2fn_null")))).bind("call of opt2fn_null"),
+                        (callExpr(hasDeclaration(functionDecl(anyOf(hasName("opt2fn_null"),
+                                                                    hasName("ftp2fn_null"))))).bind("call of opt2fn_null"),
                          parmVarDecl().bind("function parameter bound to optional")),
                         hasDeclaration(functionDecl().bind("declaration of function receiving optional"))),
                        this);
@@ -382,8 +384,10 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
   }
   if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of opt2fn_null")->getCallee())
   {
-      diag(match->getBeginLoc(), "Use opt2path_optional instead of opt2fn_null")
-          << FixItHint::CreateReplacement(SourceRange(match->getBeginLoc(), match->getEndLoc()), "opt2path_optional");
+      std::string functionName = prettyPrintExpr(match);
+      std::string replacementName = (functionName == "opt2fn_null") ? "opt2path_optional" : "ftp2path_optional";
+      diag(match->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
+          << FixItHint::CreateReplacement(SourceRange(match->getBeginLoc(), match->getEndLoc()), replacementName);
   }
   if (const auto *match = Result.Nodes.getNodeAs<DeclRefExpr>("variable name"))
   {
