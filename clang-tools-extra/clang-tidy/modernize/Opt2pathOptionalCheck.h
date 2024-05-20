@@ -31,9 +31,8 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
                                           const FunctionDecl* functionDecl,
                                           bool toOptionalPath);
         void updateFunctionDeclaration(const ast_matchers::MatchFinder::MatchResult &Result,
-                                       const std::string& variableName,
                                        const FunctionDecl* functionDeclToChange,
-                                       size_t parameterIndex,
+                                       const ParmVarDecl* parmVarDeclToChange,
                                        bool toOptionalPath);
 
     private:

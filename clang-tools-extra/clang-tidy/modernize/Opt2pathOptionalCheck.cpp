@@ -21,20 +21,23 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::modernize {
 
 void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
-  Finder->addMatcher
-      (binaryOperator
-       (isAssignmentOperator(),
-        hasOperands
-        (declRefExpr(to(varDecl().bind("declaration"))).bind("variable name"),
-         callExpr(hasDeclaration(functionDecl(hasName("opt2fn_null")))).bind("call of opt2fn_null")))/*.bind("assignment")*/,
-       this);
-  // Note that this matcher must follow the previous one, which
-  // matches the same fragment in a more specific way. It seems to be
-  // OK that the binding uses the same string ID as the above match.
-  Finder->addMatcher
-      (callExpr(hasDeclaration(functionDecl(hasName("opt2fn_null")))).bind("call of opt2fn_null"),
-      this);
-}
+    Finder->addMatcher
+        (binaryOperator
+         (isAssignmentOperator(),
+          hasOperands
+          (declRefExpr(to(varDecl().bind("declaration"))).bind("variable name"),
+           callExpr(hasDeclaration(functionDecl(hasName("opt2fn_null")))).bind("call of opt2fn_null")))/*.bind("assignment")*/,
+         this);
+    // Note that this matcher must follow the previous one, which
+    // matches the same fragment in a more specific way. It seems to be
+    // OK that the binding uses the same string ID as the above match.
+    Finder->addMatcher(callExpr
+                       (forEachArgumentWithParam
+                        (callExpr(hasDeclaration(functionDecl(hasName("opt2fn_null")))).bind("call of opt2fn_null"),
+                         parmVarDecl().bind("function parameter bound to optional")),
+                        hasDeclaration(functionDecl().bind("declaration of function receiving optional"))),
+                       this);
+    }
 
 // Describes an argument to fix for a function all
 struct ArgExprToFix
@@ -84,6 +87,18 @@ Opt2pathOptionalCheck::~Opt2pathOptionalCheck() = default;
 Opt2pathOptionalCheck::Opt2pathOptionalCheck(StringRef Name,
                                              ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context) {}
+
+std::string prettyPrintExpr(const Expr* expr)
+{
+    static clang::LangOptions langOpts;
+    langOpts.CPlusPlus = true;
+    static clang::PrintingPolicy policy(langOpts);
+
+    std::string TypeS;
+    llvm::raw_string_ostream s(TypeS);
+    expr->printPretty(s, 0, policy);
+    return s.str();
+}
 
 template <typename NodeT>
 const FunctionDecl* findEnclosingFuncDecl(const ast_matchers::MatchFinder::MatchResult &Result,
@@ -156,9 +171,6 @@ Opt2pathOptionalCheck::IndexerVisitor::argExprsToFix(const ast_matchers::MatchFi
                                                      const FunctionDecl* enclosingFunctionDecl)
 {
     std::vector<ArgExprToFix> argExprsToFix;
-    clang::LangOptions langOpts;
-    langOpts.CPlusPlus = true;
-    clang::PrintingPolicy policy(langOpts);
     for (const auto& [functionDecl, indexEntry] : index_)
     {
         for (const CallExpr* call : indexEntry.calls_)
@@ -168,24 +180,12 @@ Opt2pathOptionalCheck::IndexerVisitor::argExprsToFix(const ast_matchers::MatchFi
             {
                 continue;
             }
-            /*
-            {
-                std::string TypeS;
-                llvm::raw_string_ostream s(TypeS);
-                call->printPretty(s, 0, policy);
-                fprintf(stderr, "Found call to %s within scope of %s\n",
-                        s.str().c_str(), enclosingFunctionDecl->getNameInfo().getAsString().c_str());
-            }
-            */
+            //fprintf(stderr, "Found call to %s within scope of %s\n", prettyPrintExpr(call).c_str(), enclosingFunctionDecl->getNameInfo().getAsString().c_str());
             const size_t numArgs = call->getNumArgs();
             for(size_t i=0; i < numArgs; i++)
             {
-                std::string TypeS;
-                llvm::raw_string_ostream s(TypeS);
                 const Expr* argExpr = call->getArg(i);
-                argExpr->printPretty(s, 0, policy);
-                const std::string argumentString = s.str();
-                if (argumentString == variableName)
+                if (prettyPrintExpr(argExpr) == variableName)
                 {
                     argExprsToFix.push_back({functionDecl, argExpr, i});
                 }
@@ -197,16 +197,11 @@ Opt2pathOptionalCheck::IndexerVisitor::argExprsToFix(const ast_matchers::MatchFi
 
 bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition, const std::string& variableName)
 {
-    clang::LangOptions langOpts;
-    langOpts.CPlusPlus = true;
-    clang::PrintingPolicy policy(langOpts);
-    std::string buffer;
-    llvm::raw_string_ostream s(buffer);
-    enclosingIfStatementCondition->printPretty(s, 0, policy);
+    const std::string ifConditionString = prettyPrintExpr(enclosingIfStatementCondition);
 
-    //fprintf(stderr, "Checking if condition: %s\n", s.str().c_str());
-    if ((s.str() == variableName) ||
-        (s.str() == variableName + " != nullptr"))
+    //fprintf(stderr, "Checking if condition: %s\n", ifConditionString.c_str());
+    if ((ifConditionString == variableName) ||
+        (ifConditionString == variableName + " != nullptr"))
     {
         return true;
     }
@@ -214,18 +209,16 @@ bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition, const
 }
 
 void Opt2pathOptionalCheck::updateFunctionDeclaration(const ast_matchers::MatchFinder::MatchResult &Result,
-                                                      const std::string& variableName,
-                                                      const FunctionDecl* functionDeclToChange, // TODO rename
-                                                      const size_t parameterIndex,
+                                                      const FunctionDecl* functionDeclToChange,
+                                                      const ParmVarDecl* parmVarDeclToChange,
                                                       const bool toOptionalPath)
 {
-    const ParmVarDecl* parameter = functionDeclToChange->getParamDecl(parameterIndex);
-    const std::string parameterName = parameter->getNameAsString();
+    const std::string parameterName = parmVarDeclToChange->getNameAsString();
     const std::string functionName = functionDeclToChange->getNameInfo().getAsString();
     //fprintf(stderr, "Changing type of parameter named %s of function %s, changing %sto optional\n", parameterName.c_str(), functionDeclToChange->getNameAsString().c_str(), toOptionalPath ? "" : "not ");
     const std::string replacementParameterType = toOptionalPath ? "const std::optional<std::filesystem::path>&" : "const std::filesystem::path&";
-    diag(parameter->getBeginLoc(), "Change function parameter to " + replacementParameterType)
-        << FixItHint::CreateReplacement(parameter->getSourceRange(), replacementParameterType + " " + parameterName);
+    diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
+        << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parameterName);
     // Recurse on updating the definition of that function only if its definition is visible
     if (functionDeclToChange->isDefined())
     {
@@ -240,10 +233,6 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
                                                          const FunctionDecl* enclosingFunctionDecl,
                                                          const bool toOptionalPath)
 {
-    clang::LangOptions langOpts;
-    langOpts.CPlusPlus = true;
-    clang::PrintingPolicy policy(langOpts);
-
     // Find all places where variableName is used as an argument to a
     // function and update the function call according to
     // toOptionalPath. fprintf is handled as a special case where we
@@ -256,15 +245,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
     {
         // TODO can this comparison be done directly on the functionDecl?
         const std::string functionName = argExprToFix.functionDecl_->getNameInfo().getAsString();
-        /*
-        {
-            std::string TypeS;
-            llvm::raw_string_ostream s(TypeS);
-            argExprToFix.argExpr_->printPretty(s, 0, policy);
-            fprintf(stderr, "Handling ArgExpr '%s' in call to function %s\n",
-                    s.str().c_str(), functionName.c_str());
-        }
-        */               
+        //fprintf(stderr, "Handling ArgExpr '%s' in call to function %s\n", prettyPrintExpr(argExprToFix.argExpr_).c_str(), functionName.c_str());
         if (functionName == "fprintf")
         {
             // TODO cater for toOptionalPath == false
@@ -284,12 +265,18 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
             {
                 diag(argExprToFix.argExpr_->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
                     << FixItHint::CreateReplacement(argExprToFix.argExpr_->getSourceRange(), variableName + ".value()");
-                updateFunctionDeclaration(Result, variableName, argExprToFix.functionDecl_, argExprToFix.parameterIndex_, false);
+                updateFunctionDeclaration(Result,
+                                          argExprToFix.functionDecl_,
+                                          argExprToFix.functionDecl_->getParamDecl(argExprToFix.parameterIndex_),
+                                          false);
             }
             else
             {
                 //fprintf(stderr, "Updating declaration of function %s in optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str());
-                updateFunctionDeclaration(Result, variableName, argExprToFix.functionDecl_, argExprToFix.parameterIndex_, toOptionalPath);
+                updateFunctionDeclaration(Result,
+                                          argExprToFix.functionDecl_,
+                                          argExprToFix.functionDecl_->getParamDecl(argExprToFix.parameterIndex_),
+                                          toOptionalPath);
             }
         }
     }
@@ -333,6 +320,13 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
       const FunctionDecl* enclosingFunctionDecl = findEnclosingFuncDecl(Result, match);
       const bool toOptionalPath = true;
       updateVariableWithinFunction(Result, variableName, enclosingFunctionDecl, toOptionalPath);
+  }
+  if (const auto *match = Result.Nodes.getNodeAs<FunctionDecl>("declaration of function receiving optional"))
+  {
+      const bool toOptionalPath = true;
+      const auto *parmVarDecl = Result.Nodes.getNodeAs<ParmVarDecl>("function parameter bound to optional");
+      assert(parmVarDecl && "Must have matching parameter declaration");
+      updateFunctionDeclaration(Result, match, parmVarDecl, toOptionalPath);
   }
 }
 

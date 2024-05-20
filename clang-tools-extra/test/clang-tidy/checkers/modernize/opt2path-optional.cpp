@@ -33,6 +33,13 @@ void processOptionalFile(int a, const char* in_trajfile)
     processFileInner(in_trajfile);
 }
 
+void processOptionalFile2(const char* fn)
+// CHECK-MESSAGES: :[[@LINE-1]]:27: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
+// CHECK-FIXES: void processOptionalFile2(const std::optional<std::filesystem::path>& fn)
+{
+    processFileInner(fn);
+}
+
 void handleFile(const char* file, const char* message)
 // CHECK-MESSAGES: :[[@LINE-1]]:17: warning: Change function parameter to const std::filesystem::path& [modernize-opt2path-optional]
 // CHECK-FIXES: void handleFile(const std::filesystem::path& file, const char* message)
@@ -71,9 +78,9 @@ void f()
     // Check that calls to functions are also refactored
     processOptionalFile(1, in_trajfile);
     
-    processOptionalFile(3, opt2fn_null(2, 4));
-    // CHECK-MESSAGES: :[[@LINE-1]]:28: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
-    // CHECK-FIXES: processOptionalFile(3, opt2path_optional(2, 4));
+    processOptionalFile2(opt2fn_null(2, 4));
+    // CHECK-MESSAGES: :[[@LINE-1]]:26: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
+    // CHECK-FIXES: processOptionalFile2(opt2path_optional(2, 4));
 
     if (in_trajfile)
     {
