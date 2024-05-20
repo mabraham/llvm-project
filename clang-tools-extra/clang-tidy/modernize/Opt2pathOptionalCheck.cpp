@@ -37,7 +37,7 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                          parmVarDecl().bind("function parameter bound to optional")),
                         hasDeclaration(functionDecl().bind("declaration of function receiving optional"))),
                        this);
-    }
+}
 
 // Describes an argument to fix for a function all
 struct ArgExprToFix
@@ -58,15 +58,22 @@ class Opt2pathOptionalCheck::IndexerVisitor
 
         bool shouldTraversePostOrder() const { return true; }
 
-        bool WalkUpFromCallExpr(CallExpr *Call)
+        bool WalkUpFromCallExpr(CallExpr *call)
         {
             if (const auto *function =
-                dyn_cast_or_null<FunctionDecl>(Call->getCalleeDecl()))
+                dyn_cast_or_null<FunctionDecl>(call->getCalleeDecl()))
             {
                 //const std::string functionName = function->getNameInfo().getAsString();
                 //        fprintf(stderr, "Found function named %s\n", functionName.c_str());
-                index_[function].calls_.insert(Call);
+                index_[function].calls_.insert(call);
             }
+            return true;
+        }
+
+        bool WalkUpFromDeclRefExpr(DeclRefExpr *declRefExpr)
+        {
+            const std::string variableName = declRefExpr->getNameInfo().getAsString();
+            declRefExprs_[variableName].push_back(declRefExpr);
             return true;
         }
 
@@ -74,6 +81,7 @@ class Opt2pathOptionalCheck::IndexerVisitor
                                                 const std::string& variableName,
                                                 const FunctionDecl* enclosingFunctionDecl);
 
+        std::unordered_map<std::string, std::vector<const DeclRefExpr*>> declRefExprs_;
     private:
         struct IndexEntry {
             std::unordered_set<const CallExpr *> calls_;
@@ -134,6 +142,39 @@ const FunctionDecl* findEnclosingFuncDecl(const ast_matchers::MatchFinder::Match
 }
 
 template <typename NodeT>
+const NodeT* findGrandparentExpr(const ast_matchers::MatchFinder::MatchResult &Result,
+                                 const DeclRefExpr* declRefExpr)
+{
+    // Get its parent nodes. The docs do not really explain why there can
+    // be multiple parents.
+    // TODO check node for nullptr?
+    clang::DynTypedNodeList nodeList = Result.Context->getParents(*declRefExpr);
+    while (!nodeList.empty())
+    {
+        // Get the first parent.
+        clang::DynTypedNode parentNode = nodeList[0];
+        
+        // You can dump the parent like this to inspect it.
+        //parentNode.dump(llvm::outs(), *(Result.Context));
+        
+        // Is the parent a NodeT?
+        if (const NodeT *parent = parentNode.get<NodeT>()) {
+            /*
+              llvm::outs() << "Found ancestor FunctionDecl: "
+              << (void const*)parent << '\n';
+              llvm::outs() << "FunctionDecl name: "
+              << parent->getNameAsString() << '\n';
+            */
+            return parent;
+        }
+        
+        // It was not a FunctionDecl.  Keep going up.
+        nodeList = Result.Context->getParents(parentNode);
+    }
+    return nullptr;
+}
+
+template <typename NodeT>
 const IfStmt* findEnclosingIfStatementWithinFunction(const ast_matchers::MatchFinder::MatchResult &Result,
                                                      const NodeT* node)
 {
@@ -171,6 +212,7 @@ Opt2pathOptionalCheck::IndexerVisitor::argExprsToFix(const ast_matchers::MatchFi
                                                      const FunctionDecl* enclosingFunctionDecl)
 {
     std::vector<ArgExprToFix> argExprsToFix;
+    //fprintf(stderr, "starting to search for %s in %s\n", variableName.c_str(), enclosingFunctionDecl->getNameInfo().getAsString().c_str());
     for (const auto& [functionDecl, indexEntry] : index_)
     {
         for (const CallExpr* call : indexEntry.calls_)
@@ -287,11 +329,37 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
             }
         }
     }
+
+    // TODO write logic to find all constructor calls taking variableName and refactor them as well
+    for (const DeclRefExpr* declRefExpr : indexer_->declRefExprs_[variableName])
+    {
+        if (const auto* cxxConstructExpr = findGrandparentExpr<CXXConstructExpr>(Result, declRefExpr))
+        {
+            if (findEnclosingFuncDecl(Result, cxxConstructExpr) == enclosingFunctionDecl)
+            {
+                //fprintf(stderr, "Found reference to %s passed to constructor call in %s\n", variableName.c_str(), enclosingFunctionDecl->getNameAsString().c_str());
+                if (const IfStmt* enclosingIfStatement =
+                    findEnclosingIfStatementWithinFunction(Result, cxxConstructExpr);
+                    toOptionalPath && enclosingIfStatement &&
+                    optionalCheckedToHaveValue(enclosingIfStatement->getCond(), variableName, this))
+                {
+                    diag(declRefExpr->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
+                        << FixItHint::CreateReplacement(declRefExpr->getSourceRange(), variableName + ".value()");
+                }
+                // TODO does it make sense to try to update C++ constructor declarations like we do function declarations?
+            }
+        }
+    }
+    
     //fprintf(stderr, "Done updating variable %s\n", variableName.c_str());
 }
 
 void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
 {
+    if (!indexer_)
+    {
+        indexer_ = std::make_unique<IndexerVisitor>(*Result.Context);
+    }
   if (const auto *match = Result.Nodes.getNodeAs<VarDecl>("declaration"))
   {
       // It's probably better to leave the lines containing only a
@@ -316,10 +384,6 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
       diag(match->getLocation(), "Use std::optional<std::filesystem::path>")
       << FixItHint::CreateInsertion(match->getLocation(), "std::optional<std::filesystem::path> ");
 
-      if (!indexer_)
-      {
-          indexer_ = std::make_unique<IndexerVisitor>(*Result.Context);
-      }
       const std::string variableName = match->getNameInfo().getAsString();
       // TODO this is too general. It does not handle the case where
       // the same variable name is declared multiple times in the same

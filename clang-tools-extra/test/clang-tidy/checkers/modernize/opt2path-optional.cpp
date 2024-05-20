@@ -53,6 +53,14 @@ void handleFile(const char* file, const char* message)
     //processFileInner(file);
 }
 
+struct StructWithConstructorTakingPath
+{
+        StructWithConstructorTakingPath(const char *filename)
+        {
+            processFileInner(filename);
+        }
+};
+
 const char *opt2fn_null(int a, int b);
 
 void f()
@@ -97,6 +105,8 @@ void f()
         // CHECK-MESSAGES: :[[@LINE-1]]:20: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
         // CHECK-FIXES: handleFile(in_trajfile.value(), "test");
     }
+
+    StructWithConstructorTakingPath obj(in_trajfile);
 }
 
 // Add things that don't trigger the check here.
