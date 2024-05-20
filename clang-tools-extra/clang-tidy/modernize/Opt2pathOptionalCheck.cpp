@@ -195,14 +195,21 @@ Opt2pathOptionalCheck::IndexerVisitor::argExprsToFix(const ast_matchers::MatchFi
     return argExprsToFix;
 }
 
-bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition, const std::string& variableName)
+bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition,
+                                const std::string& variableName,
+                                ClangTidyCheck* check)
 {
     const std::string ifConditionString = prettyPrintExpr(enclosingIfStatementCondition);
 
     //fprintf(stderr, "Checking if condition: %s\n", ifConditionString.c_str());
-    if ((ifConditionString == variableName) ||
-        (ifConditionString == variableName + " != nullptr"))
+    if (ifConditionString == variableName)
     {
+        return true;
+    }
+    if (ifConditionString == variableName + " != nullptr")
+    {
+        check->diag(enclosingIfStatementCondition->getBeginLoc(), "Use std::optional::operator bool() rather than comparison with nullptr")
+            << FixItHint::CreateReplacement(enclosingIfStatementCondition->getSourceRange(), variableName);
         return true;
     }
     return false;
@@ -261,7 +268,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
             if (const IfStmt* enclosingIfStatement =
                 findEnclosingIfStatementWithinFunction(Result, argExprToFix.argExpr_);
                 toOptionalPath && enclosingIfStatement &&
-                optionalCheckedToHaveValue(enclosingIfStatement->getCond(), variableName))
+                optionalCheckedToHaveValue(enclosingIfStatement->getCond(), variableName, this))
             {
                 diag(argExprToFix.argExpr_->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
                     << FixItHint::CreateReplacement(argExprToFix.argExpr_->getSourceRange(), variableName + ".value()");

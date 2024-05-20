@@ -90,6 +90,8 @@ void f()
     }
 
     if (in_trajfile != nullptr)
+    // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: if (in_trajfile)
     {
         handleFile(in_trajfile, "test");
         // CHECK-MESSAGES: :[[@LINE-1]]:20: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
