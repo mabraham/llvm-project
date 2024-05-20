@@ -254,6 +254,12 @@ bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition,
             << FixItHint::CreateReplacement(enclosingIfStatementCondition->getSourceRange(), variableName);
         return true;
     }
+    // This is very much a hack, but it probably covers all the relevant cases
+    if ((ifConditionString.find(variableName + " &&") != std::string::npos) ||
+        (ifConditionString.find("&& " + variableName) != std::string::npos))
+    {
+        return true;
+    }
     return false;
 }
 
