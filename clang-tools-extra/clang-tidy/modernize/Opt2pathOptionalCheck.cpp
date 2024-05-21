@@ -83,6 +83,12 @@ class Opt2pathOptionalCheck::IndexerVisitor
                                                 const std::string& variableName,
                                                 const FunctionDecl* enclosingFunctionDecl);
 
+        void fixNullptrArguments(const ast_matchers::MatchFinder::MatchResult &Result,
+                                 const FunctionDecl* enclosingFunctionDecl,
+                                 const FunctionDecl* functionDeclUpdated,
+                                 const std::vector<size_t>& argumentIndicesToUpdate,
+                                 ClangTidyCheck *check);
+
         std::unordered_map<std::string, std::vector<const DeclRefExpr*>> declRefExprs_;
     private:
         struct IndexEntry {
@@ -143,6 +149,7 @@ const FunctionDecl* findEnclosingFuncDecl(const ast_matchers::MatchFinder::Match
     return nullptr;
 }
 
+// TODO this does not only find grandparents, limit it?
 template <typename NodeT>
 const NodeT* findGrandparentExpr(const ast_matchers::MatchFinder::MatchResult &Result,
                                  const DeclRefExpr* declRefExpr)
@@ -239,6 +246,50 @@ Opt2pathOptionalCheck::IndexerVisitor::argExprsToFix(const ast_matchers::MatchFi
     return argExprsToFix;
 }
 
+void Opt2pathOptionalCheck::IndexerVisitor::fixNullptrArguments(const ast_matchers::MatchFinder::MatchResult &Result,
+                                                                const FunctionDecl* enclosingFunctionDecl,
+                                                                const FunctionDecl* functionDeclUpdated,
+                                                                const std::vector<size_t>& argumentIndicesToUpdate,
+                                                                ClangTidyCheck *check)
+{
+    fprintf(stderr, "trying to fix nullptr args to function %s\n", functionDeclUpdated->getNameAsString().c_str());
+    for (const auto& [functionDecl, indexEntry] : index_)
+    {
+        const std::string functionName = functionDecl->getNameAsString();
+        if (functionDecl != functionDeclUpdated)
+        {
+            fprintf(stderr, "Not considering calls to function %s\n", functionName.c_str());
+            continue;
+        }
+        for (const CallExpr* call : indexEntry.calls_)
+        {
+            // Does this call come within the function declared by enclosingFunctionDecl?
+            if (findEnclosingFuncDecl(Result, call) != enclosingFunctionDecl)
+            {
+                fprintf(stderr, "Not considering call to function %s because not in scope of %s\n", functionName.c_str(), enclosingFunctionDecl->getNameAsString().c_str());
+                continue;
+            }
+            fprintf(stderr, "Considering call to function %s because in scope of %s\n", functionName.c_str(), enclosingFunctionDecl->getNameAsString().c_str());
+            const size_t numArgs = call->getNumArgs();
+            for (const size_t argIndex : argumentIndicesToUpdate)
+            {
+                fprintf(stderr, "argIndex %zu numArgs %zu\n", argIndex, numArgs);
+                if (argIndex < numArgs)
+                {
+                    const Expr* argExpr = call->getArg(argIndex);
+                    fprintf(stderr, "argIndex describes arg '%s'\n", prettyPrintExpr(argExpr).c_str());
+                    if (prettyPrintExpr(argExpr) == "nullptr")
+                    {
+                        check->diag(argExpr->getBeginLoc(), "Use std::nullopt instead of nullptr")
+                            << FixItHint::CreateReplacement(argExpr->getSourceRange(), "std::nullopt");
+                    }
+                }
+            }
+        }
+    }
+    fprintf(stderr, "done trying to fix nullptr args\n");
+}
+
 bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition,
                                 const std::string& variableName,
                                 ClangTidyCheck* check)
@@ -312,7 +363,8 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
     // toOptionalPath. fprintf/printf is handled as a special case
     // where we need to extract the C-string properly. Then proceed to
     // modify the function declaration consistently.
-    
+
+    std::unordered_map<const FunctionDecl*, std::vector<size_t>> functionCallsTakingOptionalToUpdate;
     //fprintf(stderr, "Updating variable named %s when used within function %s, changing %sto optional\n", variableName.c_str(), enclosingFunctionDecl->getNameAsString().c_str(), toOptionalPath ? "" : "not ");
     const std::vector<ArgExprToFix> argExprsToFix = indexer_->argExprsToFix(Result, variableName, enclosingFunctionDecl);
     for (const auto& argExprToFix : argExprsToFix)
@@ -343,6 +395,11 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
             }
             else
             {
+                if (toOptionalPath)
+                {
+                    fprintf(stderr, "Preparing nullptr check for function %s parameter index %zu in optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str(), argExprToFix.parameterIndex_);
+                    functionCallsTakingOptionalToUpdate[argExprToFix.functionDecl_].push_back(argExprToFix.parameterIndex_);
+                }
                 //fprintf(stderr, "Updating declaration of function %s in optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str());
                 updateFunctionDeclaration(Result,
                                           argExprToFix.functionDecl_,
@@ -352,6 +409,13 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
         }
     }
 
+    // Find all calls to this function in this scope and update any
+    // matching nullptr arguments to std::nullopt.
+    for (const auto& [functionDecl, argumentIndicesToUpdate] : functionCallsTakingOptionalToUpdate)
+    {
+        indexer_->fixNullptrArguments(Result, enclosingFunctionDecl, functionDecl, argumentIndicesToUpdate, this);
+    }
+        
     // TODO write logic to find all constructor calls taking variableName and refactor them as well
     for (const DeclRefExpr* declRefExpr : indexer_->declRefExprs_[variableName])
     {

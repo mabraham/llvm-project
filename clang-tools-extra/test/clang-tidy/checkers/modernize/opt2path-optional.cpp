@@ -91,7 +91,12 @@ void f()
 
     // Check that calls to functions are also refactored
     processOptionalFile(1, in_trajfile);
-    
+     
+    // Check that calls to functions taking nullptr are refactored
+    processOptionalFile(1, nullptr);
+    // CHECK-MESSAGES: :[[@LINE-1]]:28: warning: Use std::nullopt instead of nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: processOptionalFile(1, std::nullopt);
+
     processOptionalFile2(opt2fn_null(2, 4));
     // CHECK-MESSAGES: :[[@LINE-1]]:26: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
     // CHECK-FIXES: processOptionalFile2(opt2path_optional(2, 4));
