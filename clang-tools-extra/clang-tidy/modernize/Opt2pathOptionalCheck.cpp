@@ -252,13 +252,13 @@ void Opt2pathOptionalCheck::IndexerVisitor::fixNullptrArguments(const ast_matche
                                                                 const std::vector<size_t>& argumentIndicesToUpdate,
                                                                 ClangTidyCheck *check)
 {
-    fprintf(stderr, "trying to fix nullptr args to function %s\n", functionDeclUpdated->getNameAsString().c_str());
+    //fprintf(stderr, "trying to fix nullptr args to function %s\n", functionDeclUpdated->getNameAsString().c_str());
     for (const auto& [functionDecl, indexEntry] : index_)
     {
         const std::string functionName = functionDecl->getNameAsString();
         if (functionDecl != functionDeclUpdated)
         {
-            fprintf(stderr, "Not considering calls to function %s\n", functionName.c_str());
+            //fprintf(stderr, "Not considering calls to function %s\n", functionName.c_str());
             continue;
         }
         for (const CallExpr* call : indexEntry.calls_)
@@ -266,18 +266,18 @@ void Opt2pathOptionalCheck::IndexerVisitor::fixNullptrArguments(const ast_matche
             // Does this call come within the function declared by enclosingFunctionDecl?
             if (findEnclosingFuncDecl(Result, call) != enclosingFunctionDecl)
             {
-                fprintf(stderr, "Not considering call to function %s because not in scope of %s\n", functionName.c_str(), enclosingFunctionDecl->getNameAsString().c_str());
+                //fprintf(stderr, "Not considering call to function %s because not in scope of %s\n", functionName.c_str(), enclosingFunctionDecl->getNameAsString().c_str());
                 continue;
             }
-            fprintf(stderr, "Considering call to function %s because in scope of %s\n", functionName.c_str(), enclosingFunctionDecl->getNameAsString().c_str());
+            //fprintf(stderr, "Considering call to function %s because in scope of %s\n", functionName.c_str(), enclosingFunctionDecl->getNameAsString().c_str());
             const size_t numArgs = call->getNumArgs();
             for (const size_t argIndex : argumentIndicesToUpdate)
             {
-                fprintf(stderr, "argIndex %zu numArgs %zu\n", argIndex, numArgs);
+                //fprintf(stderr, "argIndex %zu numArgs %zu\n", argIndex, numArgs);
                 if (argIndex < numArgs)
                 {
                     const Expr* argExpr = call->getArg(argIndex);
-                    fprintf(stderr, "argIndex describes arg '%s'\n", prettyPrintExpr(argExpr).c_str());
+                    //fprintf(stderr, "argIndex describes arg '%s'\n", prettyPrintExpr(argExpr).c_str());
                     if (prettyPrintExpr(argExpr) == "nullptr")
                     {
                         check->diag(argExpr->getBeginLoc(), "Use std::nullopt instead of nullptr")
@@ -287,7 +287,7 @@ void Opt2pathOptionalCheck::IndexerVisitor::fixNullptrArguments(const ast_matche
             }
         }
     }
-    fprintf(stderr, "done trying to fix nullptr args\n");
+    //fprintf(stderr, "done trying to fix nullptr args\n");
 }
 
 bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition,
@@ -404,7 +404,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
             {
                 if (toOptionalPath)
                 {
-                    fprintf(stderr, "Preparing nullptr check for function %s parameter index %zu in optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str(), argExprToFix.parameterIndex_);
+                    //fprintf(stderr, "Preparing nullptr check for function %s parameter index %zu in optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str(), argExprToFix.parameterIndex_);
                     functionCallsTakingOptionalToUpdate[argExprToFix.functionDecl_].push_back(argExprToFix.parameterIndex_);
                 }
                 //fprintf(stderr, "Updating declaration of function %s in non-optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str());
