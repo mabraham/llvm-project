@@ -119,6 +119,17 @@ void f()
         // CHECK-FIXES: handleFile(in_trajfile.value(), "test");
     }
 
+    // Handle nested conditionals
+    if (in_trajfile)
+    {
+        if (true)
+        {
+            handleFile(in_trajfile, "test");
+            // CHECK-MESSAGES: :[[@LINE-1]]:24: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+            // CHECK-FIXES: handleFile(in_trajfile.value(), "test");
+        }
+    }
+    
     StructWithConstructorTakingPath obj(in_trajfile);
 
     const char* ftpfile;

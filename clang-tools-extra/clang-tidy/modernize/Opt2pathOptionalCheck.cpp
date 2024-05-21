@@ -265,6 +265,23 @@ bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition,
     return false;
 }
 
+bool enclosingIfStatementEnsuresOptionalHasValue(const ast_matchers::MatchFinder::MatchResult &Result,
+                                                 const Expr* argExpr,
+                                                 const std::string& variableName,
+                                                 ClangTidyCheck* check)
+{
+    const IfStmt* enclosingIfStatement = findEnclosingIfStatementWithinFunction<Expr>(Result, argExpr);
+    while (enclosingIfStatement)
+    {
+        if (optionalCheckedToHaveValue(enclosingIfStatement->getCond(), variableName, check))
+        {
+            return true;
+        }
+        enclosingIfStatement = findEnclosingIfStatementWithinFunction<IfStmt>(Result, enclosingIfStatement);
+    }
+    return false;
+}
+
 void Opt2pathOptionalCheck::updateFunctionDeclaration(const ast_matchers::MatchFinder::MatchResult &Result,
                                                       const FunctionDecl* functionDeclToChange,
                                                       const ParmVarDecl* parmVarDeclToChange,
@@ -315,10 +332,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
             // the std::optional has a value? If so, the callee should
             // receive a std::filesystem::path via a call to
             // .value(). Otherwise, leave it alone.
-            if (const IfStmt* enclosingIfStatement =
-                findEnclosingIfStatementWithinFunction(Result, argExprToFix.argExpr_);
-                toOptionalPath && enclosingIfStatement &&
-                optionalCheckedToHaveValue(enclosingIfStatement->getCond(), variableName, this))
+            if (toOptionalPath && enclosingIfStatementEnsuresOptionalHasValue(Result, argExprToFix.argExpr_, variableName, this))
             {
                 diag(argExprToFix.argExpr_->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
                     << FixItHint::CreateReplacement(argExprToFix.argExpr_->getSourceRange(), variableName + ".value()");
