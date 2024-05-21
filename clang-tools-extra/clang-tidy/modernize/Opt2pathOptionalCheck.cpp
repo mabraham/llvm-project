@@ -360,9 +360,9 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
 {
     // Find all places where variableName is used as an argument to a
     // function and update the function call according to
-    // toOptionalPath. fprintf/printf is handled as a special case
-    // where we need to extract the C-string properly. Then proceed to
-    // modify the function declaration consistently.
+    // toOptionalPath. fprintf/printf/gmx_fatal are handled as special
+    // cases where we need to extract the C-string properly. Then
+    // proceed to modify the function declaration consistently.
 
     std::unordered_map<const FunctionDecl*, std::vector<size_t>> functionCallsTakingOptionalToUpdate;
     //fprintf(stderr, "Updating variable named %s when used within function %s, changing %sto optional\n", variableName.c_str(), enclosingFunctionDecl->getNameAsString().c_str(), toOptionalPath ? "" : "not ");
@@ -372,11 +372,18 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
         // TODO can this comparison be done directly on the functionDecl?
         const std::string functionName = argExprToFix.functionDecl_->getNameInfo().getAsString();
         //fprintf(stderr, "Handling ArgExpr '%s' in call to function %s\n", prettyPrintExpr(argExprToFix.argExpr_).c_str(), functionName.c_str());
-        if (functionName == "fprintf" || functionName == "printf")
+        if (functionName == "fprintf" || functionName == "printf" || functionName == "gmx_fatal")
         {
-            // TODO cater for toOptionalPath == false
-            diag(argExprToFix.argExpr_->getEndLoc(), "Get C string from std::optional<std::filesystem::path>")
-                << FixItHint::CreateReplacement(argExprToFix.argExpr_->getSourceRange(), variableName + ".value().string().c_str()");
+            if (toOptionalPath)
+            {
+                diag(argExprToFix.argExpr_->getEndLoc(), "Get C string from std::optional<std::filesystem::path>")
+                    << FixItHint::CreateReplacement(argExprToFix.argExpr_->getSourceRange(), variableName + ".value().c_str()");
+            }
+            else
+            {
+                diag(argExprToFix.argExpr_->getEndLoc(), "Get C string from std::filesystem::path")
+                    << FixItHint::CreateReplacement(argExprToFix.argExpr_->getSourceRange(), variableName + ".c_str()");
+            }
         }
         else
         {
@@ -400,7 +407,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
                     fprintf(stderr, "Preparing nullptr check for function %s parameter index %zu in optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str(), argExprToFix.parameterIndex_);
                     functionCallsTakingOptionalToUpdate[argExprToFix.functionDecl_].push_back(argExprToFix.parameterIndex_);
                 }
-                //fprintf(stderr, "Updating declaration of function %s in optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str());
+                //fprintf(stderr, "Updating declaration of function %s in non-optional case\n", argExprToFix.functionDecl_->getNameAsString().c_str());
                 updateFunctionDeclaration(Result,
                                           argExprToFix.functionDecl_,
                                           argExprToFix.functionDecl_->getParamDecl(argExprToFix.parameterIndex_),

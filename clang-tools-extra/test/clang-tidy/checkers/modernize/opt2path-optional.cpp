@@ -29,7 +29,7 @@ void processOptionalFile(int a, const char* in_trajfile)
 {
     fprintf(stderr, "Working on file %s\n", in_trajfile);
     // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
-    // CHECK-FIXES: fprintf(stderr, "Working on file %s\n", in_trajfile.value().string().c_str());
+    // CHECK-FIXES: fprintf(stderr, "Working on file %s\n", in_trajfile.value().c_str());
 
     processFileInner(in_trajfile);
 }
@@ -45,6 +45,10 @@ void handleFile(const char* file, const char* message)
 // CHECK-MESSAGES: :[[@LINE-1]]:17: warning: Change function parameter to const std::filesystem::path& [modernize-opt2path-optional]
 // CHECK-FIXES: void handleFile(const std::filesystem::path& file, const char* message)
 {
+    fprintf(stderr, "Working on file %s\n", file);
+    // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::filesystem::path [modernize-opt2path-optional]
+    // CHECK-FIXES: fprintf(stderr, "Working on file %s\n", file.c_str());
+
     // TODO I don't know how to handle the case where the optional and
     // non-optional paths both call the same inner function. Maybe it
     // depends on a preliminary refactoring to remove the ambiguity?
@@ -81,11 +85,11 @@ void f()
 
     fprintf(stderr, "Writing to file %s\n", in_trajfile);
     // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
-    // CHECK-FIXES: fprintf(stderr, "Writing to file %s\n", in_trajfile.value().string().c_str());
+    // CHECK-FIXES: fprintf(stderr, "Writing to file %s\n", in_trajfile.value().c_str());
 
     printf("Writing to file %s\n", in_trajfile);
     // CHECK-MESSAGES: :[[@LINE-1]]:36: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
-    // CHECK-FIXES: printf("Writing to file %s\n", in_trajfile.value().string().c_str());
+    // CHECK-FIXES: printf("Writing to file %s\n", in_trajfile.value().c_str());
     
     // TODO also check multiple calls to fprintf
 
