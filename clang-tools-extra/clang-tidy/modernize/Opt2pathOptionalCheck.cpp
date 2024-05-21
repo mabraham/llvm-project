@@ -301,7 +301,8 @@ bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition,
     {
         return true;
     }
-    if (ifConditionString == variableName + " != nullptr")
+    if ((ifConditionString == variableName + " != nullptr") ||
+        (ifConditionString == "nullptr != " + variableName))
     {
         check->diag(enclosingIfStatementCondition->getBeginLoc(), "Use std::optional::operator bool() rather than comparison with nullptr")
             << FixItHint::CreateReplacement(enclosingIfStatementCondition->getSourceRange(), variableName);
