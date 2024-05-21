@@ -271,8 +271,8 @@ void Opt2pathOptionalCheck::updateFunctionDeclaration(const ast_matchers::MatchF
                                                       const bool toOptionalPath)
 {
     const std::string parameterName = parmVarDeclToChange->getNameAsString();
-    const std::string functionName = functionDeclToChange->getNameInfo().getAsString();
-    //fprintf(stderr, "Changing type of parameter named %s of function %s, changing %sto optional\n", parameterName.c_str(), functionDeclToChange->getNameAsString().c_str(), toOptionalPath ? "" : "not ");
+    const std::string functionName = functionDeclToChange->getNameAsString();
+    //fprintf(stderr, "Changing type of parameter named %s of function %s, changing %sto optional\n", parameterName.c_str(), functionName.c_str(), toOptionalPath ? "" : "not ");
     const std::string replacementParameterType = toOptionalPath ? "const std::optional<std::filesystem::path>&" : "const std::filesystem::path&";
     diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
         << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parameterName);
@@ -292,9 +292,9 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
 {
     // Find all places where variableName is used as an argument to a
     // function and update the function call according to
-    // toOptionalPath. fprintf is handled as a special case where we
-    // need to extract the C-string properly. Then proceed to modify the
-    // function declaration consistently.
+    // toOptionalPath. fprintf/printf is handled as a special case
+    // where we need to extract the C-string properly. Then proceed to
+    // modify the function declaration consistently.
     
     //fprintf(stderr, "Updating variable named %s when used within function %s, changing %sto optional\n", variableName.c_str(), enclosingFunctionDecl->getNameAsString().c_str(), toOptionalPath ? "" : "not ");
     const std::vector<ArgExprToFix> argExprsToFix = indexer_->argExprsToFix(Result, variableName, enclosingFunctionDecl);
@@ -303,7 +303,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
         // TODO can this comparison be done directly on the functionDecl?
         const std::string functionName = argExprToFix.functionDecl_->getNameInfo().getAsString();
         //fprintf(stderr, "Handling ArgExpr '%s' in call to function %s\n", prettyPrintExpr(argExprToFix.argExpr_).c_str(), functionName.c_str());
-        if (functionName == "fprintf")
+        if (functionName == "fprintf" || functionName == "printf")
         {
             // TODO cater for toOptionalPath == false
             diag(argExprToFix.argExpr_->getEndLoc(), "Get C string from std::optional<std::filesystem::path>")

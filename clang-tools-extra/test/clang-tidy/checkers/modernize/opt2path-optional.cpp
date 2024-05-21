@@ -17,6 +17,7 @@ class optional
 } // namespace std
 
 int *stderr;
+void printf(const char *, const char *);
 void fprintf(int *, const char *, const char *);
 
 void processFileInner(const char *filename);
@@ -82,6 +83,10 @@ void f()
     // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
     // CHECK-FIXES: fprintf(stderr, "Writing to file %s\n", in_trajfile.value().string().c_str());
 
+    printf("Writing to file %s\n", in_trajfile);
+    // CHECK-MESSAGES: :[[@LINE-1]]:36: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: printf("Writing to file %s\n", in_trajfile.value().string().c_str());
+    
     // TODO also check multiple calls to fprintf
 
     // Check that calls to functions are also refactored
