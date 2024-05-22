@@ -13,12 +13,17 @@
 #include "clang/Lex/Lexer.h"
 
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 using namespace clang::ast_matchers;
 
 namespace clang::tidy::modernize {
+
+namespace {
+
+auto isPointerToConstChar = pointerType(pointee(isAnyCharacter(), isConstQualified()));
+
+} // namespace
 
 void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
     Finder->addMatcher
@@ -38,6 +43,21 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                                                                     hasName("ftp2fn_null"))))).bind("call of opt2fn_null"),
                          parmVarDecl().bind("function parameter bound to optional")),
                         hasDeclaration(functionDecl().bind("declaration of function receiving optional"))),
+                       this);
+    // Find uses like
+    //
+    //   bool var = (filename != nullptr) || (nullptr != otherFilename)
+    //
+    // to refactor them to use std::optional properly
+    Finder->addMatcher(parenExpr
+                       (has
+                        (binaryOperator
+                         (hasOperatorName("!="),
+                          hasOperands
+                          (ignoringImplicit(cxxNullPtrLiteralExpr()),
+                           ignoringImplicit(declRefExpr(hasType(isPointerToConstChar),
+                                                        to(varDecl().bind("declaration of possible optional path")))))))
+                        ).bind("parenthesized expression to replace"),
                        this);
 }
 
@@ -472,7 +492,8 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
       diag(match->getBeginLoc(), "Don't declare const char* variable that won't be used")
           << FixItHint::CreateRemoval(SourceRange(match->getBeginLoc(), match->getEndLoc()));
       //          << FixItHint::CreateRemoval(semicolon);
-  }
+      varDeclOfOptionalFilenames_.insert(match);
+     }
   if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of opt2fn_null"))
   {
       const Expr* callee = match->getCallee();
@@ -500,6 +521,16 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
       const auto *parmVarDecl = Result.Nodes.getNodeAs<ParmVarDecl>("function parameter bound to optional");
       assert(parmVarDecl && "Must have matching parameter declaration");
       updateFunctionDeclaration(Result, match, parmVarDecl, toOptionalPath);
+  }
+  // TODO could this logic be re-used with if statement condition expressions?
+  if (const auto *match = Result.Nodes.getNodeAs<ParenExpr>("parenthesized expression to replace"))
+  {
+      const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of possible optional path");
+      if (varDeclOfOptionalFilenames_.find(varDecl) != varDeclOfOptionalFilenames_.end())
+      {
+          diag(match->getBeginLoc(), "Use std::optional::operator bool() rather than comparison with nullptr")
+              << FixItHint::CreateReplacement(match->getSourceRange(), varDecl->getNameAsString());
+      }
   }
 }
 

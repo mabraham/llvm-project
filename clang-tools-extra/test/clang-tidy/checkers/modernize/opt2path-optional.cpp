@@ -157,6 +157,11 @@ void f()
     // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
     // CHECK-MESSAGES: :[[@LINE-2]]:15: warning: Use ftp2path_optional instead of ftp2fn_null [modernize-opt2path-optional]
     // CHECK-FIXES: std::optional<std::filesystem::path> ftpfile = ftp2path_optional(3, 5);
+
+    const bool someBool = (in_trajfile != nullptr) || (nullptr != in_trajfile);
+    // CHECK-MESSAGES: :[[@LINE-1]]:27: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-MESSAGES: :[[@LINE-2]]:55: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: const bool someBool = in_trajfile || in_trajfile;
 }
 
 // Add things that don't trigger the check here.

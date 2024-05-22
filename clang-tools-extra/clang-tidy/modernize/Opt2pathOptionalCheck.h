@@ -13,6 +13,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 namespace clang::tidy::modernize {
 
@@ -38,6 +39,7 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
     private:
         class IndexerVisitor;
         std::unique_ptr<IndexerVisitor> indexer_;
+        std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
 };
 
 } // namespace clang::tidy::modernize
