@@ -89,6 +89,8 @@ class Opt2pathOptionalCheck::IndexerVisitor
                                  const std::vector<size_t>& argumentIndicesToUpdate,
                                  ClangTidyCheck *check);
 
+        // TODO the names used as keys is risky if the same name is
+        // used declarations in different scopes
         std::unordered_map<std::string, std::vector<const DeclRefExpr*>> declRefExprs_;
     private:
         struct IndexEntry {
@@ -424,7 +426,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
         indexer_->fixNullptrArguments(Result, enclosingFunctionDecl, functionDecl, argumentIndicesToUpdate, this);
     }
         
-    // TODO write logic to find all constructor calls taking variableName and refactor them as well
+    // Find all constructor calls taking variableName and refactor them as well
     for (const DeclRefExpr* declRefExpr : indexer_->declRefExprs_[variableName])
     {
         if (const auto* cxxConstructExpr = findGrandparentExpr<CXXConstructExpr>(Result, declRefExpr))
@@ -450,6 +452,9 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
 
 void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
 {
+    // Note that the Result objects seem to appear in order of
+    // traversal of the AST, and not in order of the calls to
+    // finder->addMatcher().
     if (!indexer_)
     {
         indexer_ = std::make_unique<IndexerVisitor>(*Result.Context);
@@ -468,12 +473,13 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
           << FixItHint::CreateRemoval(SourceRange(match->getBeginLoc(), match->getEndLoc()));
       //          << FixItHint::CreateRemoval(semicolon);
   }
-  if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of opt2fn_null")->getCallee())
+  if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of opt2fn_null"))
   {
-      std::string functionName = prettyPrintExpr(match);
+      const Expr* callee = match->getCallee();
+      std::string functionName = prettyPrintExpr(callee);
       std::string replacementName = (functionName == "opt2fn_null") ? "opt2path_optional" : "ftp2path_optional";
-      diag(match->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
-          << FixItHint::CreateReplacement(SourceRange(match->getBeginLoc(), match->getEndLoc()), replacementName);
+      diag(callee->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
+          << FixItHint::CreateReplacement(SourceRange(callee->getBeginLoc(), callee->getEndLoc()), replacementName);
   }
   if (const auto *match = Result.Nodes.getNodeAs<DeclRefExpr>("variable name"))
   {
