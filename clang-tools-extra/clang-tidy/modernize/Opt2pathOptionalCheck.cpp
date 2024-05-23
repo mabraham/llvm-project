@@ -436,6 +436,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
                                           argExprToFix.functionDecl_->getParamDecl(argExprToFix.parameterIndex_),
                                           toOptionalPath);
             }
+            // TODO handle case where an assertion ensures the optional is valid
         }
     }
 
