@@ -76,10 +76,15 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                       forEachDescendant(assertionExpr)
                       ).bind("compound statement enclosing assertion"),
          this);
+    // Match function calls taking references to possible optional paths
     Finder->addMatcher
-        (declRefExpr(to(varDecl().bind("declaration of possible optional path")),
-                     optionally(hasAncestor(compoundStmt().bind("optional ancestor compound statement")))
-                     ).bind("use of possible optional path"),
+        (callExpr
+         (forEachArgumentWithParam
+          (declRefExpr(hasType(isPointerToConstChar),
+                       to(varDecl().bind("declaration of possible optional path")),
+                       optionally(hasAncestor(compoundStmt().bind("optional ancestor compound statement")))
+                       ).bind("use of possible optional path in call expression"),
+           parmVarDecl().bind("possible function parameter receiving optional path"))).bind("call expression using possible optional path"),
          this);
 }
 
@@ -146,6 +151,14 @@ struct Opt2pathOptionalCheck::Assertion
 {
         SourceLocation endOfAssertionParenExpr_;
         const VarDecl* declarationOfVariableReferencedInAssertion_;
+};
+
+struct Opt2pathOptionalCheck::PossibleUseOfOptionalPath
+{
+        const DeclRefExpr* declRefExpr_;
+        const CompoundStmt* optionalCompoundStmt_;
+        const ParmVarDecl* optionalParmVarDeclToChange_;
+        const CallExpr* callExpr_;
 };
 
 Opt2pathOptionalCheck::~Opt2pathOptionalCheck() = default;
@@ -500,6 +513,126 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
     //fprintf(stderr, "Done updating variable %s\n", variableName.c_str());
 }
 
+bool Opt2pathOptionalCheck::optionalPathUsedAsValue(const DeclRefExpr *declRefExpr, const VarDecl* varDecl, const CompoundStmt* optionalCompoundStmt, ASTContext *context)
+{
+    if (!optionalCompoundStmt)
+    {
+        return false;
+    }
+    //fprintf(stderr, "Matched variable named '%s' used compound statement '%s'\n",
+    //        varDecl->getNameAsString().c_str(),
+    //        prettyPrint(compoundStmt).c_str());
+    // Does the compound statement include an assertion?
+    if (const auto assertionIt = assertionsByEnclosingCompoundStmt_.find(optionalCompoundStmt);
+        assertionIt != assertionsByEnclosingCompoundStmt_.end())
+    {
+        //fprintf(stderr, "Compound statement includes an assertion\n");
+        for(const auto& assertion : assertionIt->second)
+        {
+            // Does the assertion refer to the same variable we matched?
+            if (assertion.declarationOfVariableReferencedInAssertion_ == varDecl)
+            {
+                //fprintf(stderr, "Matched assertion within compound statement '%s' on variable named '%s'\n",
+                //        prettyPrint(optionalCompoundStmt).c_str(),
+                //        varDecl->getNameAsString().c_str());
+                // Does the assertion precede the variable reference within the context of the match?
+                BeforeThanCompare<SourceLocation> isBefore(context->getSourceManager());
+                if (isBefore(assertion.endOfAssertionParenExpr_, declRefExpr->getBeginLoc()))
+                {
+                    //fprintf(stderr, "Assertion precedes use\n");
+                    // Assume the assertion makes it safe to extract the value from the optional path.
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool isPrintfStyleFunctionCallExpr(const CallExpr* callExpr)
+{
+    if (const auto* functionDecl = callExpr->getDirectCallee())
+    {
+        const std::string functionName = functionDecl->getNameAsString();
+        return (functionName == "fprintf" ||
+                functionName == "printf" ||
+                functionName == "gmx_fatal");
+    }
+    return false;
+}
+
+void Opt2pathOptionalCheck::refactorUseOfPathInFunctionCall(const DeclRefExpr *declRefExpr,
+                                                            const VarDecl* varDecl,
+                                                            const bool convertToPath,
+                                                            const CompoundStmt* optionalCompoundStmt,
+                                                            const ParmVarDecl* parmVarDeclToChange,
+                                                            const bool printfStyleFunctionCallExpr,
+                                                            const CallExpr* callExpr,
+                                                            ASTContext *context)
+{
+    if (printfStyleFunctionCallExpr)
+    {
+        fprintf(stderr, "Converting DeclRefExpr usage in printf-style function to %s\n", convertToPath ? "path" : "optional path");
+        // special handling for fprintf and similar
+        if (!convertToPath)
+        {
+            diag(declRefExpr->getEndLoc(), "Get C string from std::optional<std::filesystem::path>")
+                << FixItHint::CreateReplacement(declRefExpr->getSourceRange(), declRefExpr->getNameInfo().getAsString() + ".value().c_str()");
+        }
+        else
+        {
+            diag(declRefExpr->getEndLoc(), "Get C string from std::filesystem::path")
+                << FixItHint::CreateReplacement(declRefExpr->getSourceRange(), declRefExpr->getNameInfo().getAsString() + ".c_str()");
+        }
+    }
+    else
+    {
+        fprintf(stderr, "Converting DeclRefExpr usage in regular function to %s\n", convertToPath ? "path" : "optional path");
+        const bool extractFromOptional = optionalPathUsedAsValue(declRefExpr, varDecl, optionalCompoundStmt, context);
+        if (extractFromOptional)
+        {
+            fprintf(stderr, "Extracting .value()\n");
+            diag(declRefExpr->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
+                << FixItHint::CreateReplacement(declRefExpr->getSourceRange(), varDecl->getNameAsString() + ".value()");
+        }
+        if (parmVarDeclToChange)
+        {
+            fprintf(stderr, "Found function parameter '%s' to change to %s\n", parmVarDeclToChange->getNameAsString().c_str(), (convertToPath || extractFromOptional) ? "path" : "optional");
+            if (convertToPath || extractFromOptional)
+            {
+                const std::string replacementParameterType = "const std::filesystem::path&";
+                diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
+                    << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
+            }
+            else
+            {
+                const std::string replacementParameterType = "const std::optional<std::filesystem::path>&";
+                diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
+                    << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
+            }
+
+        // Now we now that that parameter is an (optional) path so we should check uses of that parameter and perhaps refactor
+            for (const PossibleUseOfOptionalPath& useOfOptionalPath : possibleUsesOfOptionalPath_[parmVarDeclToChange])
+            {
+                fprintf(stderr, "Reconsidering match on variable '%s' %sin compound statement %sassociated with parameter declaration, associated with %s-style function in call expression '%s'\n",
+                        prettyPrint(useOfOptionalPath.declRefExpr_).c_str(),
+                        useOfOptionalPath.optionalCompoundStmt_ ? "" : "not",
+                        useOfOptionalPath.optionalParmVarDeclToChange_ ? "" : "not",
+                        printfStyleFunctionCallExpr ? "printf" : "regular",
+                        prettyPrint(useOfOptionalPath.callExpr_).c_str());
+                refactorUseOfPathInFunctionCall(useOfOptionalPath.declRefExpr_,
+                                                parmVarDeclToChange,
+                                                convertToPath || extractFromOptional,
+                                                useOfOptionalPath.optionalCompoundStmt_,
+                                                useOfOptionalPath.optionalParmVarDeclToChange_,
+                                                isPrintfStyleFunctionCallExpr(useOfOptionalPath.callExpr_),
+                                                useOfOptionalPath.callExpr_,
+                                                context);
+            }
+        }
+    }
+}
+
 void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
 {
     // Note that the Result objects seem to appear in order of
@@ -526,12 +659,20 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
      }
   if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of opt2fn_null"))
   {
-      const Expr* callee = match->getCallee();
-      std::string functionName = prettyPrint(callee);
-      std::string replacementName = (functionName == "opt2fn_null") ? "opt2path_optional" : "ftp2path_optional";
-      diag(callee->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
-          << FixItHint::CreateReplacement(SourceRange(callee->getBeginLoc(), callee->getEndLoc()), replacementName);
+      {
+          const Expr* callee = match->getCallee();
+          std::string functionName = prettyPrint(callee);
+          std::string replacementName = (functionName == "opt2fn_null") ? "opt2path_optional" : "ftp2path_optional";
+          diag(callee->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
+              << FixItHint::CreateReplacement(SourceRange(callee->getBeginLoc(), callee->getEndLoc()), replacementName);
+      }
+      {
+          const auto *match = Result.Nodes.getNodeAs<DeclRefExpr>("variable name");
+          diag(match->getLocation(), "Use std::optional<std::filesystem::path>")
+              << FixItHint::CreateInsertion(match->getLocation(), "std::optional<std::filesystem::path> ");
+      }
   }
+  /*
   if (const auto *match = Result.Nodes.getNodeAs<DeclRefExpr>("variable name"))
   {
       diag(match->getLocation(), "Use std::optional<std::filesystem::path>")
@@ -545,6 +686,8 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
       const bool toOptionalPath = true;
       updateVariableWithinFunction(Result, variableName, enclosingFunctionDecl, toOptionalPath);
   }
+  */
+  /*
   if (const auto *match = Result.Nodes.getNodeAs<FunctionDecl>("declaration of function receiving optional"))
   {
       const bool toOptionalPath = true;
@@ -552,6 +695,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
       assert(parmVarDecl && "Must have matching parameter declaration");
       updateFunctionDeclaration(Result, match, parmVarDecl, toOptionalPath);
   }
+  */
   // TODO could this logic be re-used with if statement condition expressions?
   if (const auto *match = Result.Nodes.getNodeAs<ParenExpr>("parenthesized expression to replace"))
   {
@@ -571,40 +715,37 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
         assertionsByEnclosingCompoundStmt_[matchingCompoundStmt].push_back
             ({assertionParenExpr->getEndLoc(), varDecl});
     }
-    if (const auto *matchingDeclRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of possible optional path"))
+    if (const auto *matchingDeclRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of possible optional path in call expression"))
     {
         const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of possible optional path");
-        if (const auto *compoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement"))
+        const auto *optionalCompoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement");
+        const auto *optionalParmVarDeclToChange = Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path");
+        const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("call expression using possible optional path");
+        const bool isPrintfStyle = isPrintfStyleFunctionCallExpr(callExpr);
+        fprintf(stderr, "Got match on variable '%s' %sin compound statement %sassociated with parameter declaration, associated with %s-style function in call expression '%s'\n",
+                prettyPrint(matchingDeclRefExpr).c_str(),
+                optionalCompoundStmt ? "" : "not",
+                optionalParmVarDeclToChange ? "" : "not",
+                isPrintfStyle ? "printf" : "regular",
+                prettyPrint(callExpr).c_str());
+        if (varDeclOfOptionalFilenames_.find(varDecl) != varDeclOfOptionalFilenames_.end())
         {
-            //fprintf(stderr, "Matched variable named '%s' used compound statement '%s'\n",
-            //        varDecl->getNameAsString().c_str(),
-            //        prettyPrint(compoundStmt).c_str());
-            // Does the compound statement include an assertion?
-            if (const auto assertionIt = assertionsByEnclosingCompoundStmt_.find(compoundStmt);
-                assertionIt != assertionsByEnclosingCompoundStmt_.end())
+            fprintf(stderr, "Found DeclRefExpr to known optional filename, refactoring\n");
+            if (optionalCompoundStmt)
             {
-                //fprintf(stderr, "Compound statement includes an assertion\n");
-                for(const auto& assertion : assertionIt->second)
-                {
-                    // Does the assertion refer to the same variable we matched?
-                    if (assertion.declarationOfVariableReferencedInAssertion_ == varDecl)
-                    {
-                        //fprintf(stderr, "Matched assertion within compound statement '%s' on variable named '%s'\n",
-                        //        prettyPrint(compoundStmt).c_str(),
-                        //        varDecl->getNameAsString().c_str());
-                        // Does the assertion precede the variable reference within the context of the match?
-                        ASTContext *context = Result.Context;
-                        BeforeThanCompare<SourceLocation> isBefore(context->getSourceManager());
-                        if (isBefore(assertion.endOfAssertionParenExpr_, matchingDeclRefExpr->getBeginLoc()))
-                        {
-                            //fprintf(stderr, "Assertion precedes use\n");
-                            // Assume the assertion makes it safe to extract the value from the optional path.
-                            diag(matchingDeclRefExpr->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
-                                << FixItHint::CreateReplacement(matchingDeclRefExpr->getSourceRange(), varDecl->getNameAsString() + ".value()");
-                        }
-                    }
-                }
+                fprintf(stderr, "Found optional compound statement\n");
             }
+            // TODO consider passing Result to optionalPathUsedAsValue
+            refactorUseOfPathInFunctionCall(matchingDeclRefExpr, varDecl,
+                                            optionalPathUsedAsValue(matchingDeclRefExpr, varDecl, optionalCompoundStmt, Result.Context),
+                                            optionalCompoundStmt,
+                                            optionalParmVarDeclToChange, isPrintfStyle, callExpr, Result.Context);
+            fprintf(stderr, "Done with DeclRefExpr\n");
+        }
+        else
+        {
+            fprintf(stderr, "Found DeclRefExpr to something not known to be an optional filename, storing\n");
+            possibleUsesOfOptionalPath_[varDecl].push_back({matchingDeclRefExpr, optionalCompoundStmt, optionalParmVarDeclToChange, callExpr});
         }
     }
 }

@@ -35,13 +35,25 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
                                        const FunctionDecl* functionDeclToChange,
                                        const ParmVarDecl* parmVarDeclToChange,
                                        bool toOptionalPath);
+        bool optionalPathUsedAsValue(const DeclRefExpr *declRefExpr, const VarDecl* varDecl, const CompoundStmt* optionalCompoundStmt,
+                                     ASTContext *context);
+        void refactorUseOfPathInFunctionCall(const DeclRefExpr *declRefExpr,
+                                             const VarDecl* varDecl,
+                                             bool convertToPath,
+                                             const CompoundStmt* optionalCompoundStatement,
+                                             const ParmVarDecl* parmVarDeclToChange,
+                                             bool printfStyleFunctionCallExpr,
+                                             const CallExpr* callExpr,
+                                             ASTContext *context);
 
     private:
         class IndexerVisitor;
         struct Assertion;
+        struct PossibleUseOfOptionalPath;
         std::unique_ptr<IndexerVisitor> indexer_;
         std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
         std::unordered_map<const CompoundStmt*, std::vector<Assertion>> assertionsByEnclosingCompoundStmt_;
+        std::unordered_map<const VarDecl*, std::vector<PossibleUseOfOptionalPath>> possibleUsesOfOptionalPath_;
 };
 
 } // namespace clang::tidy::modernize
