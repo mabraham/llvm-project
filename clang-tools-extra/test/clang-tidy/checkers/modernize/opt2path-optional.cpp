@@ -28,6 +28,10 @@ void fprintf(int *, const char *, const char *);
 const char *opt2fn_null(int a, int b);
 const char *ftp2fn_null(int a, int b);
 
+//#include <cassert>
+void __assert_fail();
+#define assert(e) ((e) ? (void)0 : __assert_fail())
+
 void processFileInner(const char *filename);
 // CHECK-MESSAGES: :[[@LINE-1]]:23: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
 
@@ -205,4 +209,22 @@ void functionUsingClassObject()
     // CHECK-FIXES: std::optional<std::filesystem::path> thePath = opt2path_optional(1, 2);
 
     StructWithConstructorTakingPath obj(thePath);
+}
+
+void functionNeedingFile(const char* file);
+
+void functionUsingAssert()
+{
+    // Model of existing declarations of path variables
+    const char* in_trajfile;
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Don't declare const char* variable that won't be used [modernize-opt2path-optional]
+    // CHECK-FIXES: ;
+    in_trajfile = opt2fn_null(1, 2);
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-MESSAGES: :[[@LINE-2]]:19: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
+    // CHECK-FIXES: std::optional<std::filesystem::path> in_trajfile = opt2path_optional(1, 2);
+
+    assert(in_trajfile);
+    
+    functionNeedingFile(in_trajfile);
 }

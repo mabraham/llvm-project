@@ -59,6 +59,28 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                                                         to(varDecl().bind("declaration of possible optional path")))))))
                         ).bind("parenthesized expression to replace"),
                        this);
+
+    // We'd like to match on the assertion directly, but it's a macro
+    // and the AST only sees the post-expansion version. This matcher
+    // is a crude model of an assertion, but it only has to work well
+    // enough with the libc used by the clang-tidy version in use. We
+    // are also not analyzing the sense in which the variable is used
+    // in the assertion, assuming that the only relevant cases are
+    // testing whether an optional path has a value.
+    auto assertionExpr = parenExpr
+        (hasDescendant(declRefExpr(to(functionDecl(hasName("__assert_fail"))))),
+         hasDescendant(declRefExpr(to(varDecl().bind("declaration of variable referenced in assertion"))))
+         ).bind("asssertion parenthesis expression");
+    Finder->addMatcher
+        (compoundStmt(unless(hasDescendant(compoundStmt())),
+                      forEachDescendant(assertionExpr)
+                      ).bind("compound statement enclosing assertion"),
+         this);
+    Finder->addMatcher
+        (declRefExpr(to(varDecl().bind("declaration of possible optional path")),
+                     optionally(hasAncestor(compoundStmt().bind("optional ancestor compound statement")))
+                     ).bind("use of possible optional path"),
+         this);
 }
 
 // Describes an argument to fix for a function all
@@ -118,6 +140,12 @@ class Opt2pathOptionalCheck::IndexerVisitor
         };
 
         std::unordered_map<const FunctionDecl *, IndexEntry> index_;
+};
+
+struct Opt2pathOptionalCheck::Assertion
+{
+        SourceLocation endOfAssertionParenExpr_;
+        const VarDecl* declarationOfVariableReferencedInAssertion_;
 };
 
 Opt2pathOptionalCheck::~Opt2pathOptionalCheck() = default;
@@ -534,6 +562,51 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
               << FixItHint::CreateReplacement(match->getSourceRange(), varDecl->getNameAsString());
       }
   }
+    if (const auto *matchingCompoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("compound statement enclosing assertion"))
+    {
+        const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of variable referenced in assertion");
+        const auto *assertionParenExpr = Result.Nodes.getNodeAs<ParenExpr>("asssertion parenthesis expression");
+        //fprintf(stderr, "adding assertion '%s' referring to %s in compound statement '%s'\n",
+        //        prettyPrint(assertionParenExpr).c_str(), varDecl->getNameAsString().c_str(), prettyPrint(matchingCompoundStmt).c_str());
+        assertionsByEnclosingCompoundStmt_[matchingCompoundStmt].push_back
+            ({assertionParenExpr->getEndLoc(), varDecl});
+    }
+    if (const auto *matchingDeclRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of possible optional path"))
+    {
+        const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of possible optional path");
+        if (const auto *compoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement"))
+        {
+            //fprintf(stderr, "Matched variable named '%s' used compound statement '%s'\n",
+            //        varDecl->getNameAsString().c_str(),
+            //        prettyPrint(compoundStmt).c_str());
+            // Does the compound statement include an assertion?
+            if (const auto assertionIt = assertionsByEnclosingCompoundStmt_.find(compoundStmt);
+                assertionIt != assertionsByEnclosingCompoundStmt_.end())
+            {
+                //fprintf(stderr, "Compound statement includes an assertion\n");
+                for(const auto& assertion : assertionIt->second)
+                {
+                    // Does the assertion refer to the same variable we matched?
+                    if (assertion.declarationOfVariableReferencedInAssertion_ == varDecl)
+                    {
+                        //fprintf(stderr, "Matched assertion within compound statement '%s' on variable named '%s'\n",
+                        //        prettyPrint(compoundStmt).c_str(),
+                        //        varDecl->getNameAsString().c_str());
+                        // Does the assertion precede the variable reference within the context of the match?
+                        ASTContext *context = Result.Context;
+                        BeforeThanCompare<SourceLocation> isBefore(context->getSourceManager());
+                        if (isBefore(assertion.endOfAssertionParenExpr_, matchingDeclRefExpr->getBeginLoc()))
+                        {
+                            //fprintf(stderr, "Assertion precedes use\n");
+                            // Assume the assertion makes it safe to extract the value from the optional path.
+                            diag(matchingDeclRefExpr->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
+                                << FixItHint::CreateReplacement(matchingDeclRefExpr->getSourceRange(), varDecl->getNameAsString() + ".value()");
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 } // namespace clang::tidy::modernize

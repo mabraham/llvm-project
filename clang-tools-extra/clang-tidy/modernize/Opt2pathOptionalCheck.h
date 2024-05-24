@@ -38,8 +38,10 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
 
     private:
         class IndexerVisitor;
+        struct Assertion;
         std::unique_ptr<IndexerVisitor> indexer_;
         std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
+        std::unordered_map<const CompoundStmt*, std::vector<Assertion>> assertionsByEnclosingCompoundStmt_;
 };
 
 } // namespace clang::tidy::modernize
