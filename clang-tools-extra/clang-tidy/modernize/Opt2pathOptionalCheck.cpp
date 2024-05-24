@@ -126,7 +126,8 @@ Opt2pathOptionalCheck::Opt2pathOptionalCheck(StringRef Name,
                                              ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context) {}
 
-std::string prettyPrintExpr(const Expr* expr)
+template <typename NodeT>
+std::string prettyPrint(const NodeT* node)
 {
     static clang::LangOptions langOpts;
     langOpts.CPlusPlus = true;
@@ -134,7 +135,7 @@ std::string prettyPrintExpr(const Expr* expr)
 
     std::string TypeS;
     llvm::raw_string_ostream s(TypeS);
-    expr->printPretty(s, 0, policy);
+    node->printPretty(s, 0, policy);
     return s.str();
 }
 
@@ -253,12 +254,12 @@ Opt2pathOptionalCheck::IndexerVisitor::argExprsToFix(const ast_matchers::MatchFi
             {
                 continue;
             }
-            //fprintf(stderr, "Found call to %s within scope of %s\n", prettyPrintExpr(call).c_str(), enclosingFunctionDecl->getNameInfo().getAsString().c_str());
+            //fprintf(stderr, "Found call to %s within scope of %s\n", prettyPrint(call).c_str(), enclosingFunctionDecl->getNameInfo().getAsString().c_str());
             const size_t numArgs = call->getNumArgs();
             for(size_t i=0; i < numArgs; i++)
             {
                 const Expr* argExpr = call->getArg(i);
-                if (prettyPrintExpr(argExpr) == variableName)
+                if (prettyPrint(argExpr) == variableName)
                 {
                     argExprsToFix.push_back({functionDecl, argExpr, i});
                 }
@@ -299,8 +300,8 @@ void Opt2pathOptionalCheck::IndexerVisitor::fixNullptrArguments(const ast_matche
                 if (argIndex < numArgs)
                 {
                     const Expr* argExpr = call->getArg(argIndex);
-                    //fprintf(stderr, "argIndex describes arg '%s'\n", prettyPrintExpr(argExpr).c_str());
-                    if (prettyPrintExpr(argExpr) == "nullptr")
+                    //fprintf(stderr, "argIndex describes arg '%s'\n", prettyPrint(argExpr).c_str());
+                    if (prettyPrint(argExpr) == "nullptr")
                     {
                         check->diag(argExpr->getBeginLoc(), "Use std::nullopt instead of nullptr")
                             << FixItHint::CreateReplacement(argExpr->getSourceRange(), "std::nullopt");
@@ -316,7 +317,7 @@ bool optionalCheckedToHaveValue(const Expr* enclosingIfStatementCondition,
                                 const std::string& variableName,
                                 ClangTidyCheck* check)
 {
-    const std::string ifConditionString = prettyPrintExpr(enclosingIfStatementCondition);
+    const std::string ifConditionString = prettyPrint(enclosingIfStatementCondition);
 
     //fprintf(stderr, "Checking if condition: %s\n", ifConditionString.c_str());
     if (ifConditionString == variableName)
@@ -394,7 +395,7 @@ void Opt2pathOptionalCheck::updateVariableWithinFunction(const ast_matchers::Mat
     {
         // TODO can this comparison be done directly on the functionDecl?
         const std::string functionName = argExprToFix.functionDecl_->getNameInfo().getAsString();
-        //fprintf(stderr, "Handling ArgExpr '%s' in call to function %s\n", prettyPrintExpr(argExprToFix.argExpr_).c_str(), functionName.c_str());
+        //fprintf(stderr, "Handling ArgExpr '%s' in call to function %s\n", prettyPrint(argExprToFix.argExpr_).c_str(), functionName.c_str());
         if (functionName == "fprintf" || functionName == "printf" || functionName == "gmx_fatal")
         {
             if (toOptionalPath)
@@ -498,7 +499,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
   if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of opt2fn_null"))
   {
       const Expr* callee = match->getCallee();
-      std::string functionName = prettyPrintExpr(callee);
+      std::string functionName = prettyPrint(callee);
       std::string replacementName = (functionName == "opt2fn_null") ? "opt2path_optional" : "ftp2path_optional";
       diag(callee->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
           << FixItHint::CreateReplacement(SourceRange(callee->getBeginLoc(), callee->getEndLoc()), replacementName);
