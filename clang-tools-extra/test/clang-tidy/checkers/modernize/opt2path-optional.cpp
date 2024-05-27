@@ -116,3 +116,16 @@ void callOfFtp2fn_nullIsRefactored()
     // CHECK-MESSAGES: :[[@LINE-2]]:15: warning: Use ftp2path_optional instead of ftp2fn_null [modernize-opt2path-optional]
     // CHECK-FIXES: std::optional<std::filesystem::path> ftpfile = ftp2path_optional(3, 5);
 }
+
+void callsTakingNullptrAreRefactored()
+{
+    // Check that calls to functions taking nullptr arguments to optional<path> arguments are refactored
+    functionTakingOptionalFile(1, nullptr);
+    // CHECK-MESSAGES: :[[@LINE-1]]:35: warning: Use std::nullopt instead of nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: functionTakingOptionalFile(1, std::nullopt);
+
+    // Check that calls to functions taking nullptr arguments to path arguments are refactored
+    functionNeedingAFile(nullptr);
+    // CHECK-MESSAGES: :[[@LINE-1]]:26: warning: Use std::filesystem::path{} instead of nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: functionNeedingAFile(std::filesystem::path{});
+}

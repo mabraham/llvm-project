@@ -46,6 +46,7 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
                                              const CallExpr* callExpr,
                                              ASTContext *context);
 
+        void onEndOfTranslationUnit() final;
     private:
         class IndexerVisitor;
         struct Assertion;
@@ -54,6 +55,9 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
         std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
         std::unordered_map<const CompoundStmt*, std::vector<Assertion>> assertionsByEnclosingCompoundStmt_;
         std::unordered_map<const VarDecl*, std::vector<PossibleUseOfOptionalPath>> possibleUsesOfOptionalPath_;
+        std::vector<const ParmVarDecl*> parametersConvertedToOptionalPath_;
+        std::vector<const ParmVarDecl*> parametersConvertedToPath_;
+        std::unordered_map<const ParmVarDecl*, std::vector<const Expr*>> paramDeclsWithTypeConstCharPointersReceivingNullptr_;
 };
 
 } // namespace clang::tidy::modernize
