@@ -38,8 +38,7 @@ void functionNeedingFileInner(const char* out);
 
 void functionNeedingAFile(const char* file)
 // CHECK-MESSAGES: :[[@LINE-1]]:27: warning: Change function parameter to const std::filesystem::path& [modernize-opt2path-optional]
-// TODO I don't understand why this assertion doesn't work, because the fix-it was applied!
-// C HECK-FIXES: void functionNeedingAFile(const std::filesystem::path& file);
+// CHECK-FIXES: void functionNeedingAFile(const std::filesystem::path& file)
 {
     fprintf(stderr, "Working on file %s\n", file);
     // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::filesystem::path [modernize-opt2path-optional]
@@ -64,6 +63,10 @@ void functionUsingAssert()
     functionNeedingAFile(path);
     // CHECK-MESSAGES: :[[@LINE-1]]:26: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
     // CHECK-FIXES: functionNeedingAFile(path.value());
+
+    fprintf(stderr, "Working after assertion %s\n", path);
+    // CHECK-MESSAGES: :[[@LINE-1]]:53: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: fprintf(stderr, "Working after assertion %s\n", path.value().c_str());
 }
 
 void processOptionalFileInner(const char *filename);

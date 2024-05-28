@@ -37,12 +37,13 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
                                        bool toOptionalPath);
         bool optionalPathUsedAsValue(const DeclRefExpr *declRefExpr, const VarDecl* varDecl, const CompoundStmt* optionalCompoundStmt,
                                      ASTContext *context);
+        void refactorUseOfPathInPrintfStyleFunctionCall(const DeclRefExpr *declRefExpr,
+                                                        bool convertToPath);
         void refactorUseOfPathInFunctionCall(const DeclRefExpr *declRefExpr,
                                              const VarDecl* varDecl,
                                              bool convertToPath,
                                              const CompoundStmt* optionalCompoundStatement,
                                              const ParmVarDecl* parmVarDeclToChange,
-                                             bool printfStyleFunctionCallExpr,
                                              const CallExpr* callExpr,
                                              ASTContext *context);
 
