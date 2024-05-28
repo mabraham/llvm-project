@@ -26,24 +26,33 @@ auto isPointerToConstChar = pointerType(pointee(isAnyCharacter(), isConstQualifi
 } // namespace
 
 void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
+    auto callExprToOptionalBuilder =
+        callExpr(hasDeclaration(functionDecl(anyOf(hasName("opt2fn_null"),
+                                                   hasName("ftp2fn_null")))));
+    // Match declarations that receive an optional by assignment
     Finder->addMatcher
         (binaryOperator
          (isAssignmentOperator(),
           hasOperands
-          (declRefExpr(to(varDecl().bind("declaration"))).bind("variable name"),
-           callExpr(hasDeclaration(functionDecl(anyOf(hasName("opt2fn_null"),
-                                                      hasName("ftp2fn_null"))))).bind("call of opt2fn_null"))),
+          (declRefExpr(to(varDecl().bind("declaration"))).bind("declaration of variable assigned an optional path"),
+           callExprToOptionalBuilder)),
          this);
+    // Match calls to optional builders, which might happen e.g. in
+    // assignment operations or as direct call expressions passed as
+    // function arguments.
+    Finder->addMatcher(callExprToOptionalBuilder.bind("call of optional builder"), this);
     // Note that this matcher must follow the previous one, which
     // matches the same fragment in a more specific way. It seems to be
     // OK that the binding uses the same string ID as the above match.
+    /*
     Finder->addMatcher(callExpr
                        (forEachArgumentWithParam
                         (callExpr(hasDeclaration(functionDecl(anyOf(hasName("opt2fn_null"),
-                                                                    hasName("ftp2fn_null"))))).bind("call of opt2fn_null"),
+                                                                    hasName("ftp2fn_null"))))).bind("call of optional builder"),
                          parmVarDecl().bind("function parameter bound to optional")),
                         hasDeclaration(functionDecl().bind("declaration of function receiving optional"))),
                        this);
+    */
     // Find uses like
     //
     //   bool var = (filename != nullptr) || (nullptr != otherFilename)
@@ -671,23 +680,21 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
       //          << FixItHint::CreateRemoval(semicolon);
       varDeclOfOptionalFilenames_.insert(match);
      }
-  if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of opt2fn_null"))
+  if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of optional builder"))
   {
-      {
-          const Expr* callee = match->getCallee();
-          std::string functionName = prettyPrint(callee);
-          std::string replacementName = (functionName == "opt2fn_null") ? "opt2path_optional" : "ftp2path_optional";
-          diag(callee->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
-              << FixItHint::CreateReplacement(SourceRange(callee->getBeginLoc(), callee->getEndLoc()), replacementName);
-      }
-      {
-          const auto *match = Result.Nodes.getNodeAs<DeclRefExpr>("variable name");
-          diag(match->getLocation(), "Use std::optional<std::filesystem::path>")
-              << FixItHint::CreateInsertion(match->getLocation(), "std::optional<std::filesystem::path> ");
-      }
+      const Expr* callee = match->getCallee();
+      std::string functionName = prettyPrint(callee);
+      std::string replacementName = (functionName == "opt2fn_null") ? "opt2path_optional" : "ftp2path_optional";
+      diag(callee->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
+          << FixItHint::CreateReplacement(SourceRange(callee->getBeginLoc(), callee->getEndLoc()), replacementName);
+  }
+  if (const auto *match = Result.Nodes.getNodeAs<DeclRefExpr>("declaration of variable assigned an optional path"))
+  {
+      diag(match->getLocation(), "Use std::optional<std::filesystem::path>")
+          << FixItHint::CreateInsertion(match->getLocation(), "std::optional<std::filesystem::path> ");
   }
   /*
-  if (const auto *match = Result.Nodes.getNodeAs<DeclRefExpr>("variable name"))
+  if (const auto *match = Result.Nodes.getNodeAs<DeclRefExpr>("declaration of variable assigned an optional path"))
   {
       diag(match->getLocation(), "Use std::optional<std::filesystem::path>")
       << FixItHint::CreateInsertion(match->getLocation(), "std::optional<std::filesystem::path> ");

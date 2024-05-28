@@ -83,6 +83,13 @@ void functionTakingOptionalFile(int a, const char* thePath)
     processOptionalFileInner(thePath);
 }
 
+void functionWithCStringParameterTypeNotChanged(const char* fn, const char* message)
+// CHECK-MESSAGES: :[[@LINE-1]]:49: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
+// CHECK-FIXES: void functionWithCStringParameterTypeNotChanged(const std::optional<std::filesystem::path>& fn, const char* message)
+{
+    processOptionalFileInner(fn);
+}
+
 void functionUsingOptionalPath()
 {
     // Model of existing declarations of path variables
@@ -103,6 +110,18 @@ void functionUsingOptionalPath()
 
     // Code that does not trigger the check
     const char* other;
+
+    // Check that usages of optional paths are generally not
+    // refactored. Also check that additional parmeters with C-string
+    // types are unaffected.
+    functionWithCStringParameterTypeNotChanged(in_trajfile, "test");
+
+    // Check that calls to function taking arguments that are returned
+    // from builder functions have the builder function calls
+    // changed to the new versions.
+    functionTakingOptionalFile(3, opt2fn_null(2, 4));
+    // CHECK-MESSAGES: :[[@LINE-1]]:35: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
+    // CHECK-FIXES: functionTakingOptionalFile(3, opt2path_optional(2, 4));
 }
 
 // Check that ftp2fn_null is handled
