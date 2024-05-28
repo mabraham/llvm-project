@@ -142,7 +142,7 @@ void callOfFtp2fn_nullIsRefactored()
     if (ftpfile)
     {
         functionNeedingAFile(ftpfile);
-        // CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
         // CHECK-FIXES: functionNeedingAFile(ftpfile.value());
     }
 }
