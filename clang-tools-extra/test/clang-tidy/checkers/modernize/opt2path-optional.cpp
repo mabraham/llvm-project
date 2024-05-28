@@ -137,6 +137,14 @@ void callOfFtp2fn_nullIsRefactored()
     // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
     // CHECK-MESSAGES: :[[@LINE-2]]:15: warning: Use ftp2path_optional instead of ftp2fn_null [modernize-opt2path-optional]
     // CHECK-FIXES: std::optional<std::filesystem::path> ftpfile = ftp2path_optional(3, 5);
+
+    // Check that usages of optional paths behind checks are refactored
+    if (ftpfile)
+    {
+        functionNeedingAFile(ftpfile);
+        // CHECK-MESSAGES: :[[@LINE-1]]:31: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: functionNeedingAFile(ftpfile.value());
+    }
 }
 
 void callsTakingNullptrAreRefactored()

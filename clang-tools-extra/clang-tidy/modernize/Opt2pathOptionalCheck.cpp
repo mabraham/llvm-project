@@ -91,7 +91,15 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
          (forEachArgumentWithParam
           (declRefExpr(hasType(isPointerToConstChar),
                        to(varDecl().bind("declaration of possible optional path")),
-                       optionally(hasAncestor(compoundStmt().bind("optional ancestor compound statement")))
+                       optionally
+                       (hasAncestor(compoundStmt().bind("optional ancestor compound statement"))),
+                       optionally
+                       (hasAncestor
+                        (compoundStmt // Make sure we don't match the declRefExpr in the if-statement condition itself
+                         (hasAncestor
+                          (ifStmt
+                           (hasCondition
+                            (expr(hasDescendant(declRefExpr(to(varDecl(equalsBoundNode("declaration of possible optional path")))))).bind("if condition expression")))))))
                        ).bind("use of possible optional path in call expression"),
            parmVarDecl().bind("possible function parameter receiving optional path"))).bind("call expression using possible optional path"),
          this);
@@ -756,6 +764,11 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
         const auto *optionalCompoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement");
         const auto *optionalParmVarDeclToChange = Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path");
         const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("call expression using possible optional path");
+        const bool convertToPath = Result.Nodes.getNodeAs<Expr>("if condition expression");
+        if (convertToPath)
+        {
+            fprintf(stderr, "found an if condition that refers to a possible optional path\n");
+        }
         const bool isPrintfStyle = isPrintfStyleFunctionCallExpr(callExpr);
         fprintf(stderr, "Got match on variable '%s' %sin compound statement %sassociated with parameter declaration, associated with %s-style function in call expression '%s'\n",
                 prettyPrint(matchingDeclRefExpr).c_str(),
