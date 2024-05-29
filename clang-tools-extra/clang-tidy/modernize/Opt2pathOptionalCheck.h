@@ -27,14 +27,6 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
         ~Opt2pathOptionalCheck();
         void registerMatchers(ast_matchers::MatchFinder *Finder) override;
         void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
-        void updateVariableWithinFunction(const ast_matchers::MatchFinder::MatchResult &Result,
-                                          const std::string& variableName,
-                                          const FunctionDecl* functionDecl,
-                                          bool toOptionalPath);
-        void updateFunctionDeclaration(const ast_matchers::MatchFinder::MatchResult &Result,
-                                       const FunctionDecl* functionDeclToChange,
-                                       const ParmVarDecl* parmVarDeclToChange,
-                                       bool toOptionalPath);
         bool optionalPathUsedAsValue(bool convertToPath,
                                      const DeclRefExpr *declRefExpr, const VarDecl* varDecl, const CompoundStmt* optionalCompoundStmt,
                                      ASTContext *context);
@@ -53,10 +45,8 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
 
         void onEndOfTranslationUnit() final;
     private:
-        class IndexerVisitor;
         struct Assertion;
         struct PossibleUseOfOptionalPath;
-        std::unique_ptr<IndexerVisitor> indexer_;
         std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
         std::unordered_map<const CompoundStmt*, std::vector<Assertion>> assertionsByEnclosingCompoundStmt_;
         std::unordered_map<const VarDecl*, std::vector<PossibleUseOfOptionalPath>> possibleUsesOfOptionalPath_;
