@@ -84,6 +84,24 @@ void functionTakingOptionalFile(int a, const char* thePath)
 
     // Call another function
     processOptionalFileInner(thePath);
+
+    // Call another function taking a path after checking a condition
+    if (thePath)
+    {
+        functionNeedingAFile(thePath);
+        // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: functionNeedingAFile(thePath.value());
+    }
+
+    // Call another function taking a path after checking a different condition
+    if (nullptr != thePath)
+    // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: if (thePath)
+    {
+        functionNeedingAFile(thePath);
+        // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: functionNeedingAFile(thePath.value());
+    }
 }
 
 void functionWithCStringParameterTypeNotChanged(const char* fn, const char* message)
@@ -144,6 +162,37 @@ void callOfFtp2fn_nullIsRefactored()
         functionNeedingAFile(ftpfile);
         // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
         // CHECK-FIXES: functionNeedingAFile(ftpfile.value());
+    }
+
+    // Check that usages of optional paths behind checks are refactored
+    if (ftpfile != nullptr)
+    // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: if (ftpfile)
+    {
+        functionNeedingAFile(ftpfile);
+        // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: functionNeedingAFile(ftpfile.value());
+    }
+
+    const bool somethingThatIsTrue = true;
+    const bool somethingElseThatIsTrue = true;
+    // Check that usages of optional paths behind some kinds of more complex checks are refactored
+    if (ftpfile && somethingThatIsTrue && somethingElseThatIsTrue)
+    {
+        functionNeedingAFile(ftpfile);
+        // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: functionNeedingAFile(ftpfile.value());
+    }
+
+    // Check that usages of optional paths behind nested conditional checks are refactored
+    if (ftpfile)
+    {
+        if (somethingThatIsTrue)
+        {
+            functionNeedingAFile(ftpfile);
+            // CHECK-MESSAGES: :[[@LINE-1]]:34: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+            // CHECK-FIXES: functionNeedingAFile(ftpfile.value());
+        }
     }
 }
 

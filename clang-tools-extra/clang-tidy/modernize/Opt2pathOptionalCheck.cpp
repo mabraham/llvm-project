@@ -92,14 +92,35 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
           (declRefExpr(hasType(isPointerToConstChar),
                        to(varDecl().bind("declaration of possible optional path")),
                        optionally
+                       // Used to find assertions that mean that the optional is known to have a value
                        (hasAncestor(compoundStmt().bind("optional ancestor compound statement"))),
+                       // Used to find whether an if statement condition means the optional is known to have a value
                        optionally
                        (hasAncestor
-                        (compoundStmt // Make sure we don't match the declRefExpr in the if-statement condition itself
+                        (compoundStmt // Make sure the declRefExpr match above is not the one in the if-statement condition matched below
                          (hasAncestor
                           (ifStmt
                            (hasCondition
-                            (expr(hasDescendant(declRefExpr(to(varDecl(equalsBoundNode("declaration of possible optional path")))))).bind("if condition expression")))))))
+                            (anyOf
+                             // Match 'if(optionalPath)'.
+                             (ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of possible optional path"))))),
+                              // Match 'if(optionalPath != nullptr)'.
+                              binaryOperator(hasOperatorName("!="),
+                                             hasOperands
+                                             (ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of possible optional path"))))),
+                                              ignoringImplicit(cxxNullPtrLiteralExpr())
+                                              )).bind("binary operator to refactor"),
+                              // Match 'if(optionalPath && somethingTrue && somethingElseTrue)'.
+                              // This is very flawed, but if the existing code uses
+                              // 'if (optionalPath && somethingTrue || somethingElse)' and then does an unchecked
+                              // access to optionalPath, then there's already bigger problems with the code.
+                              hasDescendant(binaryOperator(hasOperatorName("&&"),
+                                                           hasOperands
+                                                           (expr(),
+                                                            ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of possible optional path")))))
+                                                            )))
+                              ))).bind("if condition means optional has value")
+                           ))))
                        ).bind("use of possible optional path in call expression"),
            parmVarDecl().bind("possible function parameter receiving optional path"))).bind("call expression using possible optional path"),
          this);
@@ -189,6 +210,7 @@ struct Opt2pathOptionalCheck::PossibleUseOfOptionalPath
         const CompoundStmt* optionalCompoundStmt_;
         const ParmVarDecl* optionalParmVarDeclToChange_;
         const CallExpr* callExpr_;
+        const BinaryOperator* binaryOperatorToRefactor_;
 };
 
 Opt2pathOptionalCheck::~Opt2pathOptionalCheck() = default;
@@ -615,16 +637,23 @@ void Opt2pathOptionalCheck::refactorUseOfPathInPrintfStyleFunctionCall(const Dec
 
 void Opt2pathOptionalCheck::refactorUseOfPath(const DeclRefExpr *declRefExpr,
                                               const VarDecl* varDecl,
-                                              const bool extractFromOptional)
+                                              const bool extractFromOptional,
+                                              const BinaryOperator* binaryOperatorToRefactor)
 {
     fprintf(stderr, "Converting DeclRefExpr usage to %s\n", extractFromOptional ? "path" : "optional path");
     fprintf(stderr, "ExtractFromOptional is %s.\n", extractFromOptional ? "true" : "false");
+    const std::string variableName = declRefExpr->getNameInfo().getAsString();
     if (extractFromOptional)
     {
         // This refactors the body of this function
         fprintf(stderr, "Extracting .value() on expression '%s'\n", prettyPrint(declRefExpr).c_str());
         diag(declRefExpr->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
-            << FixItHint::CreateReplacement(declRefExpr->getSourceRange(), varDecl->getNameAsString() + ".value()");
+            << FixItHint::CreateReplacement(declRefExpr->getSourceRange(), variableName + ".value()");
+    }
+    if (binaryOperatorToRefactor)
+    {
+        diag(binaryOperatorToRefactor->getBeginLoc(), "Use std::optional::operator bool() rather than comparison with nullptr")
+            << FixItHint::CreateReplacement(binaryOperatorToRefactor->getSourceRange(), variableName);
     }
 }
 
@@ -677,12 +706,13 @@ void Opt2pathOptionalCheck::refactorFunctionDeclReceivingPath(const DeclRefExpr 
                 }
                 else
                 {
-                    const bool extractFromOptional = optionalPathUsedAsValue(useOfOptionalPath.convertToPath_,
+                    const bool extractFromOptional = optionalPathUsedAsValue(useOfOptionalPath.convertToPath_ || useOfOptionalPath.binaryOperatorToRefactor_,
                                                                              useOfOptionalPath.declRefExpr_,
                                                                              parmVarDeclToChange,
                                                                              useOfOptionalPath.optionalCompoundStmt_,
                                                                              context);
-                    refactorUseOfPath(useOfOptionalPath.declRefExpr_, varDecl, extractFromOptional);
+                    refactorUseOfPath(useOfOptionalPath.declRefExpr_, varDecl, extractFromOptional,
+                                      useOfOptionalPath.binaryOperatorToRefactor_);
 
                     // Then refactor function calls that receive that parameter
                     refactorFunctionDeclReceivingPath(useOfOptionalPath.declRefExpr_,
@@ -783,10 +813,11 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
         const auto *optionalCompoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement");
         const auto *optionalParmVarDeclToChange = Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path");
         const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("call expression using possible optional path");
-        const bool convertToPath = Result.Nodes.getNodeAs<Expr>("if condition expression");
+        const auto *binaryOperatorToRefactor = Result.Nodes.getNodeAs<BinaryOperator>("binary operator to refactor");
+        const bool convertToPath = Result.Nodes.getNodeAs<IfStmt>("if condition means optional has value");
         if (convertToPath)
         {
-            fprintf(stderr, "found an if condition that refers to a possible optional path\n");
+            fprintf(stderr, "found an if condition that refers to a possible optional path for variable '%s'\n", matchingDeclRefExpr->getNameInfo().getAsString().c_str());
         }
         const bool isPrintfStyle = isPrintfStyleFunctionCallExpr(callExpr);
         fprintf(stderr, "Got match on variable '%s' %sin compound statement %sassociated with parameter declaration, associated with %s-style function in call expression '%s'\n",
@@ -814,7 +845,8 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             else
             {
                 const bool extractFromOptional = optionalPathUsedAsValue(convertToPath, matchingDeclRefExpr, varDecl, optionalCompoundStmt, Result.Context);
-                refactorUseOfPath(matchingDeclRefExpr, varDecl, extractFromOptional);
+                refactorUseOfPath(matchingDeclRefExpr, varDecl, extractFromOptional,
+                                  binaryOperatorToRefactor);
 
                 // Then we refactor the function that is called
                 refactorFunctionDeclReceivingPath(matchingDeclRefExpr,
@@ -827,7 +859,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
         else
         {
             fprintf(stderr, "Found DeclRefExpr to something not known to be an optional filename, storing\n");
-            possibleUsesOfOptionalPath_[varDecl].push_back({convertToPath, matchingDeclRefExpr, optionalCompoundStmt, optionalParmVarDeclToChange, callExpr});
+            possibleUsesOfOptionalPath_[varDecl].push_back({convertToPath, matchingDeclRefExpr, optionalCompoundStmt, optionalParmVarDeclToChange, callExpr, binaryOperatorToRefactor});
         }
     }
     if (const auto *matchingExpr = Result.Nodes.getNodeAs<Expr>("nullptr to potentially replace"))
