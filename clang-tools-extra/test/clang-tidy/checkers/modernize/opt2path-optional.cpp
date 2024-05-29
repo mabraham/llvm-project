@@ -194,6 +194,20 @@ void callOfFtp2fn_nullIsRefactored()
             // CHECK-FIXES: functionNeedingAFile(ftpfile.value());
         }
     }
+
+    const char* in_trajfile;
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Don't declare const char* variable that won't be used [modernize-opt2path-optional]
+    // CHECK-FIXES: ;
+    in_trajfile = opt2fn_null(1, 2);
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-MESSAGES: :[[@LINE-2]]:19: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
+    // CHECK-FIXES: std::optional<std::filesystem::path> in_trajfile = opt2path_optional(1, 2);
+
+    // Check that construction of complex boolean variables is refactored
+    const bool someBool = (in_trajfile != nullptr) || (nullptr != ftpfile);
+    // CHECK-MESSAGES: :[[@LINE-1]]:27: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-MESSAGES: :[[@LINE-2]]:55: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: const bool someBool = in_trajfile || ftpfile;
 }
 
 void callsTakingNullptrAreRefactored()
@@ -207,4 +221,27 @@ void callsTakingNullptrAreRefactored()
     functionNeedingAFile(nullptr);
     // CHECK-MESSAGES: :[[@LINE-1]]:26: warning: Use std::filesystem::path{} instead of nullptr [modernize-opt2path-optional]
     // CHECK-FIXES: functionNeedingAFile(std::filesystem::path{});
+}
+
+struct StructWithConstructorTakingPath
+{
+        // TODO do we need the ability to refactor this?
+        StructWithConstructorTakingPath(const char *path)
+        {
+            functionNeedingAFile(path);
+        }
+};
+
+void functionUsingClassObject()
+{
+    // Model of existing declarations of path variables
+    const char* thePath;
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Don't declare const char* variable that won't be used [modernize-opt2path-optional]
+    // CHECK-FIXES: ;
+    thePath = opt2fn_null(1, 2);
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-MESSAGES: :[[@LINE-2]]:15: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
+    // CHECK-FIXES: std::optional<std::filesystem::path> thePath = opt2path_optional(1, 2);
+
+    StructWithConstructorTakingPath obj(thePath);
 }
