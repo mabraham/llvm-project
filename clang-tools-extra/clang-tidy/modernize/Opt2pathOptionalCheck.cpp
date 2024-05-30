@@ -385,7 +385,6 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
         diag(match->getLocation(), "Use std::optional<std::filesystem::path>")
             << FixItHint::CreateInsertion(match->getLocation(), "std::optional<std::filesystem::path> ");
     }
-    // TODO could this logic be re-used with if statement condition expressions?
     if (const auto *match = Result.Nodes.getNodeAs<ParenExpr>("parenthesized expression to replace"))
     {
         const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of potential optional path");
