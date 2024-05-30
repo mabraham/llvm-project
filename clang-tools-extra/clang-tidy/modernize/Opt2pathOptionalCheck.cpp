@@ -59,7 +59,7 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
         (binaryOperator
          (isAssignmentOperator(),
           hasOperands
-          (declRefExpr(to(varDecl().bind("declaration"))).bind("declaration of variable assigned an optional path"),
+          (declRefExpr(to(varDecl().bind("declaration of optional path"))).bind("declaration of variable assigned an optional path"),
            callExprToOptionalBuilder)),
          this);
     // Match calls to optional builders, which might happen e.g. in
@@ -385,7 +385,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
     // Note that the Result objects seem to be returned to this
     // function in order of traversal of the AST, and not in order of
     // the calls to finder->addMatcher().
-    if (const auto *match = Result.Nodes.getNodeAs<VarDecl>("declaration"))
+    if (const auto *match = Result.Nodes.getNodeAs<VarDecl>("declaration of optional path"))
     {
         // It's probably better to leave the lines containing only a
         // semicolon so that they can be grepped away later.
