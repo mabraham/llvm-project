@@ -42,11 +42,19 @@ auto isPointerToConstChar = pointerType(pointee(isAnyCharacter(), isConstQualifi
 // safe to assume that the optional has a value in the following
 // scope. A function parameter receiving such a value should be
 // refactored to take a path.
+//
+// The matching takes place in source order and are purely based on
+// language syntax. For example, at the point we match a variable
+// declaration with the right type, we don't yet know whether it will
+// have the return value from an optional builder assigned to it. So
+// in many cases the bound nodes from the matches are recorded for
+// later use when we find out which matches are truly relevant.
 void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
+    // Match any of the set of optional path builder functions.
     auto callExprToOptionalBuilder =
         callExpr(hasDeclaration(functionDecl(anyOf(hasName("opt2fn_null"),
                                                    hasName("ftp2fn_null")))));
-    // Match declarations that receive an optional by assignment
+    // Match declarations that receive an optional by assignment.
     Finder->addMatcher
         (binaryOperator
          (isAssignmentOperator(),
@@ -74,31 +82,43 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                         ).bind("parenthesized expression to replace"),
                        this);
 
+    // Match compound statements that include assertions on const
+    // char* variables, so that uses of such variables later in the
+    // scope of that statement can know it is valid to use .value()
+    //    
     // We'd like to match on the assertion directly, but it's a macro
-    // and the AST only sees the post-expansion version. This matcher
-    // is a crude model of an assertion, but it only has to work well
+    // and the AST only sees the code after expansion. This matcher is
+    // a crude model of an assertion, but it only has to work well
     // enough with the libc used by the clang-tidy version in use. We
     // are also not analyzing the sense in which the variable is used
     // in the assertion, assuming that the only relevant cases are
     // testing whether an optional path has a value.
     auto assertionExpr = parenExpr
         (hasDescendant(declRefExpr(to(functionDecl(hasName("__assert_fail"))))),
-         hasDescendant(declRefExpr(to(varDecl().bind("declaration of variable referenced in assertion"))))
+         hasDescendant(declRefExpr(to(varDecl(hasType(isPointerToConstChar)).bind("declaration of variable referenced in assertion"))))
          ).bind("asssertion parenthesis expression");
+    // Match each assertion within a compound statement
     Finder->addMatcher
         (compoundStmt(forEachDescendant(assertionExpr)
                       ).bind("compound statement enclosing assertion"),
          this);
-    // Match function calls taking arguments that refer to potential optional paths
+    // Match each argument of a function call that is a variable that
+    // is a potential optional path. Explore the surrounding context
+    // for clues about whether the variable is known to be
+    // valid. These can be used later when we learn that the variable
+    // actually is an optional path.
     Finder->addMatcher
         (callExpr
          (forEachArgumentWithParam
           (declRefExpr(hasType(isPointerToConstChar),
                        to(varDecl().bind("declaration of potential optional path")),
                        optionally
-                       // Used to find assertions that mean that the optional is known to have a value
+                       // Used to find assertions that mean that the
+                       // optional is known to have a value.
                        (hasAncestor(compoundStmt().bind("optional ancestor compound statement"))),
-                       // Used to find whether an if statement condition means the optional is known to have a value
+                       // Used to find whether an if statement
+                       // condition means the optional is known to
+                       // have a value.
                        optionally
                        (hasAncestor
                         (compoundStmt // Make sure the declRefExpr match above is not the one in the if-statement condition matched below
@@ -115,6 +135,7 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                                               ignoringImplicit(cxxNullPtrLiteralExpr())
                                               )).bind("possible binary operator to refactor"),
                               // Match 'if(optionalPath && somethingTrue && somethingElseTrue)'.
+                              //
                               // This is very flawed, but if the existing code uses
                               // 'if (optionalPath && somethingTrue || somethingElse)' and then does an unchecked
                               // access to optionalPath, then there's already bigger problems with the code.
@@ -129,6 +150,8 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
            parmVarDecl().bind("possible function parameter receiving optional path"))
           ).bind("call expression using potential optional path"),
          this);
+    // Match each argument of a function call that is the return value
+    // from one of the optional-builder functions.
     Finder->addMatcher
         (callExpr
          (forEachArgumentWithParam
@@ -150,12 +173,15 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
          this);
 }
 
+// Records details about an assertion that might be needed later.
 struct Opt2pathOptionalCheck::Assertion
 {
         SourceLocation endOfAssertionParenExpr_;
         const VarDecl* declarationOfVariableReferencedInAssertion_;
 };
 
+// Records details about the use of a variable that might be an
+// optional path and might be needed later.
 struct Opt2pathOptionalCheck::PossibleUseOfOptionalPath
 {
         bool convertToPath_;
@@ -173,6 +199,7 @@ Opt2pathOptionalCheck::Opt2pathOptionalCheck(StringRef Name,
                                              ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context) {}
 
+// Helper function to pretty-print any AST node
 template <typename NodeT>
 std::string prettyPrint(const NodeT* node)
 {
@@ -199,7 +226,7 @@ bool Opt2pathOptionalCheck::optionalPathUsedAsValue(const bool convertToPath,
     }
     //fprintf(stderr, "Matched variable named '%s' used compound statement '%s'\n",
     //        varDecl->getNameAsString().c_str(),
-    //        prettyPrint(compoundStmt).c_str());
+    //        optionalCompoundStmt ? prettyPrint(optionalCompoundStmt).c_str() : "missing");
     // Does the compound statement include an assertion?
     if (const auto assertionIt = assertionsByEnclosingCompoundStmt_.find(optionalCompoundStmt);
         assertionIt != assertionsByEnclosingCompoundStmt_.end())
@@ -260,9 +287,8 @@ void Opt2pathOptionalCheck::refactorUseOfPath(const DeclRefExpr *declRefExpr,
                                               const bool extractFromOptional,
                                               const BinaryOperator* possibleBinaryOperatorToRefactor)
 {
-    fprintf(stderr, "Converting DeclRefExpr usage to %s\n", extractFromOptional ? "path" : "optional path");
-    fprintf(stderr, "ExtractFromOptional is %s.\n", extractFromOptional ? "true" : "false");
     const std::string variableName = declRefExpr->getNameInfo().getAsString();
+    fprintf(stderr, "Converting DeclRefExpr usage of %s to %s\n", variableName.c_str(), extractFromOptional ? "path" : "optional path");
     if (extractFromOptional)
     {
         // This refactors the body of this function
