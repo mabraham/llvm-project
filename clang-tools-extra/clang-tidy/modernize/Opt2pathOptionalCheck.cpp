@@ -350,7 +350,7 @@ void Opt2pathOptionalCheck::refactorFunctionDeclReceivingPath(const bool convert
                 }
                 else
                 {
-                    const bool extractFromOptional = optionalPathUsedAsValue(useOfOptionalPath.convertToPath_ || useOfOptionalPath.possibleBinaryOperatorToRefactor_,
+                    const bool extractFromOptional = optionalPathUsedAsValue(useOfOptionalPath.convertToPath_,
                                                                              useOfOptionalPath.declRefExpr_,
                                                                              parmVarDeclToChange,
                                                                              useOfOptionalPath.optionalCompoundStmt_,
@@ -454,7 +454,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             {
                 // This is a special case, we assume that the original
                 // author knew that an optional<path> had a value.
-                refactorUseOfPathInPrintfStyleFunctionCall(matchingDeclRefExpr, false);
+                refactorUseOfPathInPrintfStyleFunctionCall(matchingDeclRefExpr, convertToPath);
             }
             else
             {
