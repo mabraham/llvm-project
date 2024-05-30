@@ -234,27 +234,19 @@ bool Opt2pathOptionalCheck::optionalPathUsedAsValue(const bool convertToPath,
     {
         return false;
     }
-    //fprintf(stderr, "Matched variable named '%s' used compound statement '%s'\n",
-    //        varDecl->getNameAsString().c_str(),
-    //        optionalCompoundStmt ? prettyPrint(optionalCompoundStmt).c_str() : "missing");
     // Does the compound statement include an assertion?
     if (const auto assertionIt = assertionsByEnclosingCompoundStmt_.find(optionalCompoundStmt);
         assertionIt != assertionsByEnclosingCompoundStmt_.end())
     {
-        //fprintf(stderr, "Compound statement includes an assertion\n");
         for(const auto& assertion : assertionIt->second)
         {
             // Does the assertion refer to the same variable we matched?
             if (assertion.declarationOfVariableReferencedInAssertion_ == varDecl)
             {
-                //fprintf(stderr, "Matched assertion within compound statement '%s' on variable named '%s'\n",
-                //        prettyPrint(optionalCompoundStmt).c_str(),
-                //        varDecl->getNameAsString().c_str());
                 // Does the assertion precede the variable reference within the context of the match?
                 BeforeThanCompare<SourceLocation> isBefore(context->getSourceManager());
                 if (isBefore(assertion.endOfAssertionParenExpr_, declRefExpr->getBeginLoc()))
                 {
-                    //fprintf(stderr, "Assertion precedes use\n");
                     // Assume the assertion makes it safe to extract the value from the optional path.
                     return true;
                 }
@@ -264,23 +256,9 @@ bool Opt2pathOptionalCheck::optionalPathUsedAsValue(const bool convertToPath,
     return false;
 }
 
-bool isPrintfStyleFunctionCallExpr(const CallExpr* callExpr)
-{
-    if (const auto* functionDecl = callExpr->getDirectCallee())
-    {
-        const std::string functionName = functionDecl->getNameAsString();
-        return (functionName == "fprintf" ||
-                functionName == "printf" ||
-                functionName == "gmx_fatal");
-    }
-    return false;
-}
-
-void Opt2pathOptionalCheck::refactorUseOfPathInPrintfStyleFunctionCall(const DeclRefExpr *declRefExpr,
+void Opt2pathOptionalCheck::refactorUseOfOptionalPathInPrintfStyleFunctionCall(const DeclRefExpr *declRefExpr,
                                                                         const bool convertToPath)
 {
-    fprintf(stderr, "Converting DeclRefExpr usage in printf-style function to %s\n", convertToPath ? "path" : "optional path");
-    // special handling for fprintf and similar
     if (!convertToPath)
     {
         diag(declRefExpr->getEndLoc(), "Get C string from std::optional<std::filesystem::path>")
@@ -293,16 +271,14 @@ void Opt2pathOptionalCheck::refactorUseOfPathInPrintfStyleFunctionCall(const Dec
     }
 }
 
-void Opt2pathOptionalCheck::refactorUseOfPath(const DeclRefExpr *declRefExpr,
-                                              const bool extractFromOptional,
-                                              const BinaryOperator* possibleBinaryOperatorToRefactor)
+void Opt2pathOptionalCheck::refactorUseOfOptionalPath(const DeclRefExpr *declRefExpr,
+                                                      const bool extractFromOptional,
+                                                      const BinaryOperator* possibleBinaryOperatorToRefactor)
 {
     const std::string variableName = declRefExpr->getNameInfo().getAsString();
-    fprintf(stderr, "Converting DeclRefExpr usage of %s to %s\n", variableName.c_str(), extractFromOptional ? "path" : "optional path");
     if (extractFromOptional)
     {
         // This refactors the body of this function
-        fprintf(stderr, "Extracting .value() on expression '%s'\n", prettyPrint(declRefExpr).c_str());
         diag(declRefExpr->getBeginLoc(), "Extract std::filesystem::path from std::optional<std::filesystem::path>")
             << FixItHint::CreateReplacement(declRefExpr->getSourceRange(), variableName + ".value()");
     }
@@ -319,36 +295,43 @@ void Opt2pathOptionalCheck::refactorFunctionDeclReceivingPath(const bool convert
                                                               const CallExpr* callExpr,
                                                               ASTContext *context)
 {
-    fprintf(stderr, "Refactoring function '%s' taking (optional) path, convertToPath is %s.\n", prettyPrint(callExpr).c_str(), convertToPath ? "true" : "false");
-    // TODO remove
+    if (parmVarDeclToChange)
     {
-        if (parmVarDeclToChange)
+        if (convertToPath)
         {
-            fprintf(stderr, "Found function parameter '%s' to change to %s\n", parmVarDeclToChange->getNameAsString().c_str(), convertToPath ? "path" : "optional");
-            if (convertToPath)
-            {
-                // This refactors the declaration of a function called from this function
-                const std::string replacementParameterType = "const std::filesystem::path&";
-                diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
-                    << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
-                parametersConvertedToPath_.push_back(parmVarDeclToChange);
-            }
-            else
-            {
-                // This refactors the declaration of a function called from this function
-                const std::string replacementParameterType = "const std::optional<std::filesystem::path>&";
-                diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
-                    << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
-                parametersConvertedToOptionalPath_.push_back(parmVarDeclToChange);
-            }
-
-            // Now we know that that parameter is an (optional) path so we should check uses of that parameter and perhaps refactor
-            for (const PossibleUseOfOptionalPath& useOfOptionalPath : possibleUsesOfOptionalPath_[parmVarDeclToChange])
-            {
-                refactorFunctionCall(useOfOptionalPath, convertToPath, parmVarDeclToChange, context);
-            }
+            // This refactors the declaration of a function called from this function
+            const std::string replacementParameterType = "const std::filesystem::path&";
+            diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
+                << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
+            parametersConvertedToPath_.push_back(parmVarDeclToChange);
+        }
+        else
+        {
+            // This refactors the declaration of a function called from this function
+            const std::string replacementParameterType = "const std::optional<std::filesystem::path>&";
+            diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
+                << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
+            parametersConvertedToOptionalPath_.push_back(parmVarDeclToChange);
+        }
+        
+        // Now we know that that parameter is an (optional) path so we should check uses of that parameter and perhaps refactor
+        for (const PossibleUseOfOptionalPath& useOfOptionalPath : possibleUsesOfOptionalPath_[parmVarDeclToChange])
+        {
+            refactorFunctionCall(useOfOptionalPath, convertToPath, parmVarDeclToChange, context);
         }
     }
+}
+
+bool isPrintfStyleFunctionCallExpr(const CallExpr* callExpr)
+{
+    if (const auto* functionDecl = callExpr->getDirectCallee())
+    {
+        const std::string functionName = functionDecl->getNameAsString();
+        return (functionName == "fprintf" ||
+                functionName == "printf" ||
+                functionName == "gmx_fatal");
+    }
+    return false;
 }
 
 void Opt2pathOptionalCheck::refactorFunctionCall(const Opt2pathOptionalCheck::PossibleUseOfOptionalPath& useOfOptionalPath,
@@ -356,21 +339,21 @@ void Opt2pathOptionalCheck::refactorFunctionCall(const Opt2pathOptionalCheck::Po
                                                  const VarDecl* parmVarDeclToChange,
                                                  ASTContext *context)
 {
-    // First change the points at which we use the parameter
     if (isPrintfStyleFunctionCallExpr(useOfOptionalPath.callExpr_))
     {
-        refactorUseOfPathInPrintfStyleFunctionCall(useOfOptionalPath.declRefExpr_,
+        refactorUseOfOptionalPathInPrintfStyleFunctionCall(useOfOptionalPath.declRefExpr_,
                                                    convertToPath);
     }
     else
     {
+        // First change the points at which we use the parameter
         const bool extractFromOptional = optionalPathUsedAsValue(useOfOptionalPath.convertToPath_,
                                                                  useOfOptionalPath.declRefExpr_,
                                                                  parmVarDeclToChange,
                                                                  useOfOptionalPath.optionalCompoundStmt_,
                                                                  context);
-        refactorUseOfPath(useOfOptionalPath.declRefExpr_, extractFromOptional,
-                          useOfOptionalPath.possibleBinaryOperatorToRefactor_);
+        refactorUseOfOptionalPath(useOfOptionalPath.declRefExpr_, extractFromOptional,
+                                  useOfOptionalPath.possibleBinaryOperatorToRefactor_);
         
         // Then refactor function calls that receive that parameter
         refactorFunctionDeclReceivingPath(convertToPath || extractFromOptional,
@@ -427,8 +410,6 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
     {
         const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of variable referenced in assertion");
         const auto *assertionParenExpr = Result.Nodes.getNodeAs<ParenExpr>("asssertion parenthesis expression");
-        //fprintf(stderr, "adding assertion '%s' referring to %s in compound statement '%s'\n",
-        //        prettyPrint(assertionParenExpr).c_str(), varDecl->getNameAsString().c_str(), prettyPrint(matchingCompoundStmt).c_str());
         assertionsByEnclosingCompoundStmt_[matchingCompoundStmt].push_back
             ({assertionParenExpr->getEndLoc(), varDecl});
     }
@@ -462,7 +443,6 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
     if (const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("call expression using optional path from builder"))
     {
         const auto *parmVarDeclToChange = Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path");
-        fprintf(stderr, "Got extra parmVarDeclToChange\n");
         // Then we refactor the function that is called
         const bool convertToPath = false;
         refactorFunctionDeclReceivingPath(convertToPath,

@@ -45,10 +45,10 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
         bool optionalPathUsedAsValue(bool convertToPath,
                                      const DeclRefExpr *declRefExpr, const VarDecl* varDecl, const CompoundStmt* optionalCompoundStmt,
                                      ASTContext *context);
-        void refactorUseOfPath(const DeclRefExpr *declRefExpr,
-                               const bool extractFromOptional,
-                               const BinaryOperator* binaryOperatorToRefactor);
-        void refactorUseOfPathInPrintfStyleFunctionCall(const DeclRefExpr *declRefExpr,
+        void refactorUseOfOptionalPath(const DeclRefExpr *declRefExpr,
+                                       const bool extractFromOptional,
+                                       const BinaryOperator* binaryOperatorToRefactor);
+        void refactorUseOfOptionalPathInPrintfStyleFunctionCall(const DeclRefExpr *declRefExpr,
                                                         bool convertToPath);
         void refactorFunctionDeclReceivingPath(bool convertToPath,
                                                const ParmVarDecl* parmVarDeclToChange,
