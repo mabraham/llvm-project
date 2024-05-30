@@ -31,14 +31,11 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
                                      const DeclRefExpr *declRefExpr, const VarDecl* varDecl, const CompoundStmt* optionalCompoundStmt,
                                      ASTContext *context);
         void refactorUseOfPath(const DeclRefExpr *declRefExpr,
-                               const VarDecl* varDecl,
                                const bool extractFromOptional,
                                const BinaryOperator* binaryOperatorToRefactor);
         void refactorUseOfPathInPrintfStyleFunctionCall(const DeclRefExpr *declRefExpr,
                                                         bool convertToPath);
-        void refactorFunctionDeclReceivingPath(const DeclRefExpr *declRefExpr,
-                                               const VarDecl* varDecl,
-                                               bool convertToPath,
+        void refactorFunctionDeclReceivingPath(bool convertToPath,
                                                const ParmVarDecl* parmVarDeclToChange,
                                                const CallExpr* callExpr,
                                                ASTContext *context);
