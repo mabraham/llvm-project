@@ -53,7 +53,8 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
     // Match any of the set of optional path builder functions.
     auto callExprToOptionalBuilder =
         callExpr(hasDeclaration(functionDecl(anyOf(hasName("opt2fn_null"),
-                                                   hasName("ftp2fn_null")))));
+                                                   hasName("ftp2fn_null"))
+                                             ).bind("declaration of optional builder function")));
     // Match declarations that receive an optional by assignment.
     Finder->addMatcher
         (binaryOperator
@@ -257,7 +258,7 @@ bool Opt2pathOptionalCheck::optionalPathUsedAsValue(const bool convertToPath,
 }
 
 void Opt2pathOptionalCheck::refactorUseOfOptionalPathInPrintfStyleFunctionCall(const DeclRefExpr *declRefExpr,
-                                                                        const bool convertToPath)
+                                                                               const bool convertToPath)
 {
     if (!convertToPath)
     {
@@ -354,9 +355,14 @@ void Opt2pathOptionalCheck::refactorFunctionCall(const Opt2pathOptionalCheck::Po
 
 void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
 {
-    // Note that the Result objects seem to be returned to this
-    // function in order of traversal of the AST, and not in order of
-    // the calls to finder->addMatcher().
+    // Note that the Result objects ar returned to this function in
+    // order of traversal of the AST, and not in order of the calls to
+    // finder->addMatcher(). So the pattern of storing matches to collections
+    // and looking them up later works.
+    //
+    // Note that some matchers bind nodes with the same ID even when
+    // identified from different kinds of AST fragments, so that the
+    // same diagnostics can be given for them.
     if (const auto *match = Result.Nodes.getNodeAs<VarDecl>("declaration of optional path"))
     {
         // It's probably better to leave the lines containing only a
@@ -375,7 +381,8 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
     if (const auto *match = Result.Nodes.getNodeAs<CallExpr>("call of optional builder"))
     {
         const Expr* callee = match->getCallee();
-        std::string functionName = prettyPrint(callee);
+        const auto* functionDecl = Result.Nodes.getNodeAs<FunctionDecl>("declaration of optional builder function");
+        std::string functionName = functionDecl->getNameAsString();
         std::string replacementName = (functionName == "opt2fn_null") ? "opt2path_optional" : "ftp2path_optional";
         diag(callee->getBeginLoc(), "Use " + replacementName + " instead of " + functionName)
             << FixItHint::CreateReplacement(SourceRange(callee->getBeginLoc(), callee->getEndLoc()), replacementName);
@@ -394,24 +401,24 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
                 << FixItHint::CreateReplacement(match->getSourceRange(), varDecl->getNameAsString());
         }
     }
-    if (const auto *matchingCompoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("compound statement enclosing assertion"))
+    if (const auto *compoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("compound statement enclosing assertion"))
     {
         const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of variable referenced in assertion");
         const auto *assertionParenExpr = Result.Nodes.getNodeAs<ParenExpr>("asssertion parenthesis expression");
-        assertionsByEnclosingCompoundStmt_[matchingCompoundStmt].push_back
+        assertionsByEnclosingCompoundStmt_[compoundStmt].push_back
             ({assertionParenExpr->getEndLoc(), varDecl});
     }
-    if (const auto *matchingDeclRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path as function argument"))
+    if (const auto *declRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path as function argument"))
     {
         const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of potential optional path");
         const bool convertToPath = Result.Nodes.getNodeAs<IfStmt>("possible if condition means optional has value");
         PossibleUseOfOptionalPath possibleUseOfOptionalPath{
             convertToPath,
-            matchingDeclRefExpr,
-            /* optionalCompoundStmt */ Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement"),
-            /* optionalParmVarDeclToChange */ Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path"),
-            /* callExpr */ Result.Nodes.getNodeAs<CallExpr>("call expression using potential optional path"),
-            /* possibleBinaryOperatorToRefactor */ Result.Nodes.getNodeAs<BinaryOperator>("possible binary operator to refactor")
+            declRefExpr,
+            Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement"),
+            Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path"),
+            Result.Nodes.getNodeAs<CallExpr>("call expression using potential optional path"),
+            Result.Nodes.getNodeAs<BinaryOperator>("possible binary operator to refactor")
         };
         // If we find that the declaration of this variable is one of
         // the known optional filenames (e.g. because it was assigned
@@ -433,13 +440,12 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
         const auto *parmVarDeclToChange = Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path");
         // Then we refactor the function that is called
         const bool convertToPath = false;
-        refactorFunctionDeclReceivingPath(convertToPath,
-                                          parmVarDeclToChange, callExpr, Result.Context);
+        refactorFunctionDeclReceivingPath(convertToPath, parmVarDeclToChange, callExpr, Result.Context);
     }
-    if (const auto *matchingExpr = Result.Nodes.getNodeAs<Expr>("nullptr to potentially replace"))
+    if (const auto *nullptrExpr = Result.Nodes.getNodeAs<Expr>("nullptr to potentially replace"))
     {
         const auto *parmVarDecl = Result.Nodes.getNodeAs<ParmVarDecl>("potential path parameter taking nullptr");
-        paramDeclsReceivingNullptr_[parmVarDecl].push_back(matchingExpr);
+        paramDeclsReceivingNullptr_[parmVarDecl].push_back(nullptrExpr);
     }
 }
  
