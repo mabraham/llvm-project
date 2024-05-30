@@ -31,12 +31,23 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
     private:
         struct Assertion;
         struct PossibleUseOfOptionalPath;
+        struct ConvertedParameter
+        {
+                // The declaration converted
+                const ParmVarDecl* parmVarDecl_;
+                // Whether it was converted to plain path (otherwise optional<path>)
+                bool convertedToPath_;
+        };
         std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
         std::unordered_map<const CompoundStmt*, std::vector<Assertion>> assertionsByEnclosingCompoundStmt_;
         std::unordered_map<const VarDecl*, std::vector<PossibleUseOfOptionalPath>> possibleUsesOfOptionalPath_;
-        std::vector<const ParmVarDecl*> parametersConvertedToOptionalPath_;
-        std::vector<const ParmVarDecl*> parametersConvertedToPath_;
-        std::unordered_map<const ParmVarDecl*, std::vector<const Expr*>> paramDeclsWithTypeConstCharPointersReceivingNullptr_;
+        // Collection of function parameters whose type was converted
+        // to optional<path> or path.
+        std::vector<ConvertedParameter> convertedParameters_;
+        // Collection of nullptr expressions used as arguments to
+        // functions whose parameters might be potential optional
+        // paths.
+        std::unordered_map<const ParmVarDecl*, std::vector<const Expr*>> paramDeclsReceivingNullptr_;
 
         void refactorFunctionCall(const PossibleUseOfOptionalPath& useOfOptionalPath,
                                   bool convertToPath,

@@ -297,22 +297,11 @@ void Opt2pathOptionalCheck::refactorFunctionDeclReceivingPath(const bool convert
 {
     if (parmVarDeclToChange)
     {
-        if (convertToPath)
-        {
-            // This refactors the declaration of a function called from this function
-            const std::string replacementParameterType = "const std::filesystem::path&";
-            diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
-                << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
-            parametersConvertedToPath_.push_back(parmVarDeclToChange);
-        }
-        else
-        {
-            // This refactors the declaration of a function called from this function
-            const std::string replacementParameterType = "const std::optional<std::filesystem::path>&";
-            diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
-                << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
-            parametersConvertedToOptionalPath_.push_back(parmVarDeclToChange);
-        }
+        const std::string replacementParameterType = (convertToPath ? "const std::filesystem::path&" :
+                                                      "const std::optional<std::filesystem::path>&");
+        diag(parmVarDeclToChange->getBeginLoc(), "Change function parameter to " + replacementParameterType)
+            << FixItHint::CreateReplacement(parmVarDeclToChange->getSourceRange(), replacementParameterType + " " + parmVarDeclToChange->getNameAsString());
+        convertedParameters_.push_back({parmVarDeclToChange, convertToPath});
         
         // Now we know that that parameter is an (optional) path so we should check uses of that parameter and perhaps refactor
         for (const PossibleUseOfOptionalPath& useOfOptionalPath : possibleUsesOfOptionalPath_[parmVarDeclToChange])
@@ -451,7 +440,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
     if (const auto *matchingExpr = Result.Nodes.getNodeAs<Expr>("nullptr to potentially replace"))
     {
         const auto *parmVarDecl = Result.Nodes.getNodeAs<ParmVarDecl>("potential path parameter taking nullptr");
-        paramDeclsWithTypeConstCharPointersReceivingNullptr_[parmVarDecl].push_back(matchingExpr);
+        paramDeclsReceivingNullptr_[parmVarDecl].push_back(matchingExpr);
     }
 }
  
@@ -462,26 +451,19 @@ void Opt2pathOptionalCheck::onEndOfTranslationUnit()
     // optional<path> or path, we can go back and convert callers that
     // were passing nullptr constants to instead use a more
     // appropriate expression.
-    const auto theEnd = paramDeclsWithTypeConstCharPointersReceivingNullptr_.end();
-    for (const ParmVarDecl* parmVarDecl : parametersConvertedToOptionalPath_)
+    const auto theEnd = paramDeclsReceivingNullptr_.end();
+    for (const ConvertedParameter& convertedParameter : convertedParameters_)
     {
-        if (paramDeclsWithTypeConstCharPointersReceivingNullptr_.find(parmVarDecl) != theEnd)
+        const std::string replacementType = (convertedParameter.convertedToPath_ ?
+                                             "std::filesystem::path{}" :
+                                             "std::nullopt");
+        if (const auto foundParamDeclIt = paramDeclsReceivingNullptr_.find(convertedParameter.parmVarDecl_);
+            foundParamDeclIt != theEnd)
         {
-            for (const Expr* nullptrExpression : paramDeclsWithTypeConstCharPointersReceivingNullptr_[parmVarDecl])
+            for (const Expr* nullptrExpression : foundParamDeclIt->second)
             {
-                diag(nullptrExpression->getBeginLoc(), "Use std::nullopt instead of nullptr")
-                    << FixItHint::CreateReplacement(nullptrExpression->getSourceRange(), "std::nullopt");
-            }
-        }
-    }
-    for (const ParmVarDecl* parmVarDecl : parametersConvertedToPath_)
-    {
-        if (paramDeclsWithTypeConstCharPointersReceivingNullptr_.find(parmVarDecl) != theEnd)
-        {
-            for (const Expr* nullptrExpression : paramDeclsWithTypeConstCharPointersReceivingNullptr_[parmVarDecl])
-            {
-                diag(nullptrExpression->getBeginLoc(), "Use std::filesystem::path{} instead of nullptr")
-                    << FixItHint::CreateReplacement(nullptrExpression->getSourceRange(), "std::filesystem::path{}");
+                diag(nullptrExpression->getBeginLoc(), "Use " + replacementType + " instead of nullptr")
+                    << FixItHint::CreateReplacement(nullptrExpression->getSourceRange(), replacementType);
             }
         }
     }
