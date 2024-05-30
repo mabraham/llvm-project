@@ -345,37 +345,38 @@ void Opt2pathOptionalCheck::refactorFunctionDeclReceivingPath(const bool convert
             // Now we know that that parameter is an (optional) path so we should check uses of that parameter and perhaps refactor
             for (const PossibleUseOfOptionalPath& useOfOptionalPath : possibleUsesOfOptionalPath_[parmVarDeclToChange])
             {
-                fprintf(stderr, "Reconsidering match on variable '%s' %sin compound statement %sassociated with parameter declaration, associated with %s-style function in call expression '%s'\n",
-                        prettyPrint(useOfOptionalPath.declRefExpr_).c_str(),
-                        useOfOptionalPath.optionalCompoundStmt_ ? "" : "not",
-                        useOfOptionalPath.optionalParmVarDeclToChange_ ? "" : "not",
-                        isPrintfStyleFunctionCallExpr(useOfOptionalPath.callExpr_) ? "printf" : "regular",
-                        prettyPrint(useOfOptionalPath.callExpr_).c_str());
-
-                // First change the points at which we use the parameter
-                if (isPrintfStyleFunctionCallExpr(useOfOptionalPath.callExpr_))
-                {
-                    refactorUseOfPathInPrintfStyleFunctionCall(useOfOptionalPath.declRefExpr_,
-                                                               convertToPath);
-                }
-                else
-                {
-                    const bool extractFromOptional = optionalPathUsedAsValue(useOfOptionalPath.convertToPath_,
-                                                                             useOfOptionalPath.declRefExpr_,
-                                                                             parmVarDeclToChange,
-                                                                             useOfOptionalPath.optionalCompoundStmt_,
-                                                                             context);
-                    refactorUseOfPath(useOfOptionalPath.declRefExpr_, extractFromOptional,
-                                      useOfOptionalPath.possibleBinaryOperatorToRefactor_);
-
-                    // Then refactor function calls that receive that parameter
-                    refactorFunctionDeclReceivingPath(convertToPath || extractFromOptional,
-                                                      useOfOptionalPath.optionalParmVarDeclToChange_,
-                                                      useOfOptionalPath.callExpr_,
-                                                      context);
-                }
+                refactorFunctionCall(useOfOptionalPath, convertToPath, parmVarDeclToChange, context);
             }
         }
+    }
+}
+
+void Opt2pathOptionalCheck::refactorFunctionCall(const Opt2pathOptionalCheck::PossibleUseOfOptionalPath& useOfOptionalPath,
+                                                 const bool convertToPath,
+                                                 const VarDecl* parmVarDeclToChange,
+                                                 ASTContext *context)
+{
+    // First change the points at which we use the parameter
+    if (isPrintfStyleFunctionCallExpr(useOfOptionalPath.callExpr_))
+    {
+        refactorUseOfPathInPrintfStyleFunctionCall(useOfOptionalPath.declRefExpr_,
+                                                   convertToPath);
+    }
+    else
+    {
+        const bool extractFromOptional = optionalPathUsedAsValue(useOfOptionalPath.convertToPath_,
+                                                                 useOfOptionalPath.declRefExpr_,
+                                                                 parmVarDeclToChange,
+                                                                 useOfOptionalPath.optionalCompoundStmt_,
+                                                                 context);
+        refactorUseOfPath(useOfOptionalPath.declRefExpr_, extractFromOptional,
+                          useOfOptionalPath.possibleBinaryOperatorToRefactor_);
+        
+        // Then refactor function calls that receive that parameter
+        refactorFunctionDeclReceivingPath(convertToPath || extractFromOptional,
+                                          useOfOptionalPath.optionalParmVarDeclToChange_,
+                                          useOfOptionalPath.callExpr_,
+                                          context);
     }
 }
 
@@ -434,54 +435,27 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
     if (const auto *matchingDeclRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path as function argument"))
     {
         const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of potential optional path");
-        const auto *optionalCompoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement");
-        const auto *optionalParmVarDeclToChange = Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path");
-        const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("call expression using potential optional path");
-        const auto *possibleBinaryOperatorToRefactor = Result.Nodes.getNodeAs<BinaryOperator>("possible binary operator to refactor");
         const bool convertToPath = Result.Nodes.getNodeAs<IfStmt>("possible if condition means optional has value");
-        if (convertToPath)
-        {
-            fprintf(stderr, "found an if condition that refers to a potential optional path for variable '%s'\n", matchingDeclRefExpr->getNameInfo().getAsString().c_str());
-        }
-        const bool isPrintfStyle = isPrintfStyleFunctionCallExpr(callExpr);
-        fprintf(stderr, "Got match on variable '%s' %sin compound statement %sassociated with parameter declaration, associated with %s-style function in call expression '%s'\n",
-                prettyPrint(matchingDeclRefExpr).c_str(),
-                optionalCompoundStmt ? "" : "not",
-                optionalParmVarDeclToChange ? "" : "not",
-                isPrintfStyle ? "printf" : "regular",
-                prettyPrint(callExpr).c_str());
+        PossibleUseOfOptionalPath possibleUseOfOptionalPath{
+            convertToPath,
+            matchingDeclRefExpr,
+            /* optionalCompoundStmt */ Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement"),
+            /* optionalParmVarDeclToChange */ Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path"),
+            /* callExpr */ Result.Nodes.getNodeAs<CallExpr>("call expression using potential optional path"),
+            /* possibleBinaryOperatorToRefactor */ Result.Nodes.getNodeAs<BinaryOperator>("possible binary operator to refactor")
+        };
+        // If we find that the declaration of this variable is one of
+        // the known optional filenames (e.g. because it was assigned
+        // a value that was the return from an optional-builder
+        // function), then refactor the function that receives the
+        // variable as an argument.
         if (varDeclOfOptionalFilenames_.find(varDecl) != varDeclOfOptionalFilenames_.end())
         {
-            fprintf(stderr, "Found DeclRefExpr to known optional filename, refactoring\n");
-            if (optionalCompoundStmt)
-            {
-                fprintf(stderr, "Found optional compound statement\n");
-            }
-            // First we refactor its use. If it is not known to have a value, then little
-            // needs to change, because optional<path> mostly works like const char*. If
-            // it is known to have a value, then we should use .value().
-            if (isPrintfStyle)
-            {
-                // This is a special case, we assume that the original
-                // author knew that an optional<path> had a value.
-                refactorUseOfPathInPrintfStyleFunctionCall(matchingDeclRefExpr, convertToPath);
-            }
-            else
-            {
-                const bool extractFromOptional = optionalPathUsedAsValue(convertToPath, matchingDeclRefExpr, varDecl, optionalCompoundStmt, Result.Context);
-                refactorUseOfPath(matchingDeclRefExpr, extractFromOptional,
-                                  possibleBinaryOperatorToRefactor);
-
-                // Then we refactor the function that is called
-                refactorFunctionDeclReceivingPath(convertToPath || extractFromOptional,
-                                                  optionalParmVarDeclToChange, callExpr, Result.Context);
-            }
-            fprintf(stderr, "Done with DeclRefExpr\n");
+            refactorFunctionCall(possibleUseOfOptionalPath, convertToPath, varDecl, Result.Context);
         }
         else
         {
-            fprintf(stderr, "Found DeclRefExpr to something not known to be an optional filename, storing\n");
-            possibleUsesOfOptionalPath_[varDecl].push_back({convertToPath, matchingDeclRefExpr, optionalCompoundStmt, optionalParmVarDeclToChange, callExpr, possibleBinaryOperatorToRefactor});
+            possibleUsesOfOptionalPath_[varDecl].push_back(possibleUseOfOptionalPath);
         }
     }
     // Refactor function f that was called like f(opt2fn_null(args))

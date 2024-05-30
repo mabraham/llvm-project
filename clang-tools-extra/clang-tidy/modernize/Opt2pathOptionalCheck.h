@@ -27,6 +27,21 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
         ~Opt2pathOptionalCheck();
         void registerMatchers(ast_matchers::MatchFinder *Finder) override;
         void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+
+    private:
+        struct Assertion;
+        struct PossibleUseOfOptionalPath;
+        std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
+        std::unordered_map<const CompoundStmt*, std::vector<Assertion>> assertionsByEnclosingCompoundStmt_;
+        std::unordered_map<const VarDecl*, std::vector<PossibleUseOfOptionalPath>> possibleUsesOfOptionalPath_;
+        std::vector<const ParmVarDecl*> parametersConvertedToOptionalPath_;
+        std::vector<const ParmVarDecl*> parametersConvertedToPath_;
+        std::unordered_map<const ParmVarDecl*, std::vector<const Expr*>> paramDeclsWithTypeConstCharPointersReceivingNullptr_;
+
+        void refactorFunctionCall(const PossibleUseOfOptionalPath& useOfOptionalPath,
+                                  bool convertToPath,
+                                  const VarDecl* parmVarDeclToChange,
+                                  ASTContext *context);
         bool optionalPathUsedAsValue(bool convertToPath,
                                      const DeclRefExpr *declRefExpr, const VarDecl* varDecl, const CompoundStmt* optionalCompoundStmt,
                                      ASTContext *context);
@@ -41,15 +56,6 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
                                                ASTContext *context);
 
         void onEndOfTranslationUnit() final;
-    private:
-        struct Assertion;
-        struct PossibleUseOfOptionalPath;
-        std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
-        std::unordered_map<const CompoundStmt*, std::vector<Assertion>> assertionsByEnclosingCompoundStmt_;
-        std::unordered_map<const VarDecl*, std::vector<PossibleUseOfOptionalPath>> possibleUsesOfOptionalPath_;
-        std::vector<const ParmVarDecl*> parametersConvertedToOptionalPath_;
-        std::vector<const ParmVarDecl*> parametersConvertedToPath_;
-        std::unordered_map<const ParmVarDecl*, std::vector<const Expr*>> paramDeclsWithTypeConstCharPointersReceivingNullptr_;
 };
 
 } // namespace clang::tidy::modernize
