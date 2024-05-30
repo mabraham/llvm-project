@@ -247,20 +247,29 @@ void functionUsingClassObject()
 }
 
 // Check that function declarations are changed
-void anotherFunctionTakingOptionalFile(int a, const char* thePath)
+void anotherFunctionTakingOptionalFile(int a, const char* anotherPath)
 // CHECK-MESSAGES: :[[@LINE-1]]:47: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
-// CHECK-FIXES: void anotherFunctionTakingOptionalFile(int a, const std::optional<std::filesystem::path>& thePath)
+// CHECK-FIXES: void anotherFunctionTakingOptionalFile(int a, const std::optional<std::filesystem::path>& anotherPath)
 {
     // Check that fprintf is handled correctly
-    fprintf(stderr, "Working on file %s\n", thePath);
+    fprintf(stderr, "Working on file %s\n", anotherPath);
     // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
-    // CHECK-FIXES: fprintf(stderr, "Working on file %s\n", thePath.value().c_str());
+    // CHECK-FIXES: fprintf(stderr, "Working on file %s\n", anotherPath.value().c_str());
 
-    assert(thePath);
+    // Call another function taking a path after checking a different condition
+    if (nullptr != anotherPath)
+    // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: if (anotherPath)
+    {
+        functionNeedingAFile(anotherPath);
+        // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: functionNeedingAFile(anotherPath.value());
+    }
 
-    functionNeedingAFile(thePath);
+    assert(anotherPath);
+    functionNeedingAFile(anotherPath);
     // CHECK-MESSAGES: :[[@LINE-1]]:26: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
-    // CHECK-FIXES: functionNeedingAFile(thePath.value());
+    // CHECK-FIXES: functionNeedingAFile(anotherPath.value());
 }
 
 void functionUsingReturnValueFromBuilderAsArgument()

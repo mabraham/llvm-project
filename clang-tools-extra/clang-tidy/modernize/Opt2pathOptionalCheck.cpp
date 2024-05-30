@@ -86,8 +86,7 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
          hasDescendant(declRefExpr(to(varDecl().bind("declaration of variable referenced in assertion"))))
          ).bind("asssertion parenthesis expression");
     Finder->addMatcher
-        (compoundStmt(unless(hasDescendant(compoundStmt())),
-                      forEachDescendant(assertionExpr)
+        (compoundStmt(forEachDescendant(assertionExpr)
                       ).bind("compound statement enclosing assertion"),
          this);
     // Match function calls taking arguments that refer to potential optional paths
