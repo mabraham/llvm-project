@@ -245,3 +245,30 @@ void functionUsingClassObject()
 
     StructWithConstructorTakingPath obj(thePath);
 }
+
+// Check that function declarations are changed
+void anotherFunctionTakingOptionalFile(int a, const char* thePath)
+// CHECK-MESSAGES: :[[@LINE-1]]:47: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
+// CHECK-FIXES: void anotherFunctionTakingOptionalFile(int a, const std::optional<std::filesystem::path>& thePath)
+{
+    // Check that fprintf is handled correctly
+    fprintf(stderr, "Working on file %s\n", thePath);
+    // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Get C string from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: fprintf(stderr, "Working on file %s\n", thePath.value().c_str());
+
+    assert(thePath);
+
+    functionNeedingAFile(thePath);
+    // CHECK-MESSAGES: :[[@LINE-1]]:26: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: functionNeedingAFile(thePath.value());
+}
+
+void functionUsingReturnValueFromBuilderAsArgument()
+{
+    // Check that calls to function taking arguments that are returned
+    // from builder functions have the builder function calls
+    // changed to the new versions.
+    anotherFunctionTakingOptionalFile(3, opt2fn_null(2, 4));
+    // CHECK-MESSAGES: :[[@LINE-1]]:42: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
+    // CHECK-FIXES: anotherFunctionTakingOptionalFile(3, opt2path_optional(2, 4));
+}

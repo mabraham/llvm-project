@@ -130,6 +130,13 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
            parmVarDecl().bind("possible function parameter receiving optional path"))
           ).bind("call expression using potential optional path"),
          this);
+    Finder->addMatcher
+        (callExpr
+         (forEachArgumentWithParam
+          (callExprToOptionalBuilder,
+           parmVarDecl().bind("possible function parameter receiving optional path"))
+          ).bind("call expression using optional path from builder"),
+         this);
     // Match someFunction(1, nullptr, b) where the second parameter
     // has type const char *, so that later when we are sure whether
     // this should take an optional path, a path, or neither, we can
@@ -442,13 +449,23 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             possibleUsesOfOptionalPath_[varDecl].push_back({convertToPath, matchingDeclRefExpr, optionalCompoundStmt, optionalParmVarDeclToChange, callExpr, possibleBinaryOperatorToRefactor});
         }
     }
+    // Refactor function f that was called like f(opt2fn_null(args))
+    if (const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("call expression using optional path from builder"))
+    {
+        const auto *parmVarDeclToChange = Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path");
+        fprintf(stderr, "Got extra parmVarDeclToChange\n");
+        // Then we refactor the function that is called
+        const bool convertToPath = false;
+        refactorFunctionDeclReceivingPath(convertToPath,
+                                          parmVarDeclToChange, callExpr, Result.Context);
+    }
     if (const auto *matchingExpr = Result.Nodes.getNodeAs<Expr>("nullptr to potentially replace"))
     {
         const auto *parmVarDecl = Result.Nodes.getNodeAs<ParmVarDecl>("potential path parameter taking nullptr");
         paramDeclsWithTypeConstCharPointersReceivingNullptr_[parmVarDecl].push_back(matchingExpr);
     }
 }
-
+ 
 void Opt2pathOptionalCheck::onEndOfTranslationUnit()
 {
     // Now that we know we have seen all the function parameters that
