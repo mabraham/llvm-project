@@ -277,6 +277,16 @@ void anotherFunctionTakingOptionalFile(int a, const char* anotherPath)
     functionNeedingAFile(anotherPath);
     // CHECK-MESSAGES: :[[@LINE-1]]:26: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
     // CHECK-FIXES: functionNeedingAFile(anotherPath.value());
+
+    const bool somethingThatIsTrue = true;
+    // Check that usages of optional paths behind some kinds of more complex checks are refactored
+    if (anotherPath && somethingThatIsTrue)
+    {
+        existingFunctionNeedingAFile(anotherPath);
+        // CHECK-MESSAGES: :[[@LINE-1]]:38: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: existingFunctionNeedingAFile(anotherPath.value());
+    }
+
 }
 
 void functionUsingReturnValueFromBuilderAsArgument()

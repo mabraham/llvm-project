@@ -103,6 +103,7 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
         (compoundStmt(forEachDescendant(assertionExpr)
                       ).bind("compound statement enclosing assertion"),
          this);
+    const auto declRefExprToPotentialOptionalPath = declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path"))));
     // Match each argument of a function call that is a variable that
     // is a potential optional path. Explore the surrounding context
     // for clues about whether the variable is known to be
@@ -138,23 +139,30 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                             (hasCondition
                              (anyOf
                               // Match 'if(optionalPath)'.
-                              (ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path"))))),
+                              (declRefExprToPotentialOptionalPath,
                                // Match 'if(optionalPath != nullptr)'.
                                binaryOperator(hasOperatorName("!="),
                                               hasOperands
-                                              (ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path"))))),
-                                               ignoringImplicit(cxxNullPtrLiteralExpr())
+                                              (declRefExprToPotentialOptionalPath,
+                                               cxxNullPtrLiteralExpr()
                                                )).bind("possible binary operator to refactor"),
                                // Match 'if(optionalPath && somethingTrue && somethingElseTrue)'.
                                //
                                // This is very flawed, but if the existing code uses
                                // 'if (optionalPath && somethingTrue || somethingElse)' and then does an unchecked
                                // access to optionalPath, then there's already bigger problems with the code.
+                               //
+                               // TODO this is also quite brittle and quite repetitive
                                hasDescendant(binaryOperator(hasOperatorName("&&"),
                                                             hasOperands
                                                             (expr(),
-                                                             ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path")))))
-                                                             )))
+                                                             declRefExprToPotentialOptionalPath
+                                                             ))),
+                               binaryOperator(hasOperatorName("&&"),
+                                              hasOperands
+                                              (expr(),
+                                               declRefExprToPotentialOptionalPath
+                                               ))
                                ))).bind("possible if condition means optional has value")
                             ))))
                         ).bind("use of potential optional path as function argument")),
