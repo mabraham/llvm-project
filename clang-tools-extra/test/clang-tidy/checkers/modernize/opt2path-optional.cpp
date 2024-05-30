@@ -8,6 +8,9 @@ namespace filesystem
 {
 class path
 {
+    public:
+        path();
+        path(const char* p);
 };
 } // namespace filesystem
 template <typename T>
@@ -246,6 +249,10 @@ void functionUsingClassObject()
     StructWithConstructorTakingPath obj(thePath);
 }
 
+// TODO this should not be refactored, but it is harmless
+void existingFunctionNeedingAFile(const std::filesystem::path& file);
+// CHECK-MESSAGES: :[[@LINE-1]]:35: warning: Change function parameter to const std::filesystem::path& [modernize-opt2path-optional]
+
 // Check that function declarations are changed
 void anotherFunctionTakingOptionalFile(int a, const char* anotherPath)
 // CHECK-MESSAGES: :[[@LINE-1]]:47: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
@@ -261,9 +268,9 @@ void anotherFunctionTakingOptionalFile(int a, const char* anotherPath)
     // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: Use std::optional::operator bool() rather than comparison with nullptr [modernize-opt2path-optional]
     // CHECK-FIXES: if (anotherPath)
     {
-        functionNeedingAFile(anotherPath);
-        // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
-        // CHECK-FIXES: functionNeedingAFile(anotherPath.value());
+        existingFunctionNeedingAFile(anotherPath);
+        // CHECK-MESSAGES: :[[@LINE-1]]:38: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: existingFunctionNeedingAFile(anotherPath.value());
     }
 
     assert(anotherPath);

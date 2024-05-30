@@ -110,43 +110,53 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
     Finder->addMatcher
         (callExpr
          (forEachArgumentWithParam
-          (declRefExpr(hasType(isPointerToConstChar),
-                       to(varDecl().bind("declaration of potential optional path")),
-                       optionally
-                       // Used to find assertions that mean that the
-                       // optional is known to have a value.
-                       (hasAncestor(compoundStmt().bind("optional ancestor compound statement"))),
-                       // Used to find whether an if statement
-                       // condition means the optional is known to
-                       // have a value.
-                       optionally
-                       (hasAncestor
-                        (compoundStmt // Make sure the declRefExpr match above is not the one in the if-statement condition matched below
-                         (hasAncestor
-                          (ifStmt
-                           (hasCondition
-                            (anyOf
-                             // Match 'if(optionalPath)'.
-                             (ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path"))))),
-                              // Match 'if(optionalPath != nullptr)'.
-                              binaryOperator(hasOperatorName("!="),
-                                             hasOperands
-                                             (ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path"))))),
-                                              ignoringImplicit(cxxNullPtrLiteralExpr())
-                                              )).bind("possible binary operator to refactor"),
-                              // Match 'if(optionalPath && somethingTrue && somethingElseTrue)'.
-                              //
-                              // This is very flawed, but if the existing code uses
-                              // 'if (optionalPath && somethingTrue || somethingElse)' and then does an unchecked
-                              // access to optionalPath, then there's already bigger problems with the code.
-                              hasDescendant(binaryOperator(hasOperatorName("&&"),
-                                                           hasOperands
-                                                           (expr(),
-                                                            ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path")))))
-                                                            )))
-                              ))).bind("possible if condition means optional has value")
-                           ))))
-                       ).bind("use of potential optional path as function argument"),
+          // The most frequent cases to match are when a function is
+          // passed a reference to a variable whose type is const char
+          // *.  We also need to match on calls to functions already
+          // taking std::filesystem::path, which triggers an implicit
+          // call to a std::string constructor when "passed" a const
+          // char *. The simplest approach is to configure the AST
+          // traversal to ignore all implicit nodes, like casts and
+          // implicit constructor calls.
+          (traverse
+           (TK_IgnoreUnlessSpelledInSource,
+            declRefExpr(hasType(isPointerToConstChar),
+                        to(varDecl().bind("declaration of potential optional path")),
+                        optionally
+                        // Used to find assertions that mean that the
+                        // optional is known to have a value.
+                        (hasAncestor(compoundStmt().bind("optional ancestor compound statement"))),
+                        // Used to find whether an if statement
+                        // condition means the optional is known to
+                        // have a value.
+                        optionally
+                        (hasAncestor
+                         (compoundStmt // Make sure the declRefExpr match above is not the one in the if-statement condition matched below
+                          (hasAncestor
+                           (ifStmt
+                            (hasCondition
+                             (anyOf
+                              // Match 'if(optionalPath)'.
+                              (ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path"))))),
+                               // Match 'if(optionalPath != nullptr)'.
+                               binaryOperator(hasOperatorName("!="),
+                                              hasOperands
+                                              (ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path"))))),
+                                               ignoringImplicit(cxxNullPtrLiteralExpr())
+                                               )).bind("possible binary operator to refactor"),
+                               // Match 'if(optionalPath && somethingTrue && somethingElseTrue)'.
+                               //
+                               // This is very flawed, but if the existing code uses
+                               // 'if (optionalPath && somethingTrue || somethingElse)' and then does an unchecked
+                               // access to optionalPath, then there's already bigger problems with the code.
+                               hasDescendant(binaryOperator(hasOperatorName("&&"),
+                                                            hasOperands
+                                                            (expr(),
+                                                             ignoringImplicit(declRefExpr(to(varDecl(equalsBoundNode("declaration of potential optional path")))))
+                                                             )))
+                               ))).bind("possible if condition means optional has value")
+                            ))))
+                        ).bind("use of potential optional path as function argument")),
            parmVarDecl().bind("possible function parameter receiving optional path"))
           ).bind("call expression using potential optional path"),
          this);
