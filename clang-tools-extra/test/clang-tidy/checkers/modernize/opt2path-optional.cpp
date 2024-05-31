@@ -26,8 +26,8 @@ std::optional<std::filesystem::path> correct_optional_file, correct_other_option
 
 // Stubs for symbols used in GROMACS code
 int *stderr;
-void printf(const char *, const char *);
-void fprintf(int *, const char *, const char *);
+void printf(const char *, ...);
+void fprintf(int *, const char *, ...);
 const char *opt2fn_null(int a, int b);
 const char *ftp2fn_null(int a, int b);
 

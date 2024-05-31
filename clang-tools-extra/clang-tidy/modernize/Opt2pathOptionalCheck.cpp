@@ -170,6 +170,23 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
            parmVarDecl().bind("possible function parameter receiving optional path"))
           ).bind("call expression using potential optional path"),
          this);
+    // Match calls to printf-style functions that take potential
+    // optional paths as arguments. These don't match above because
+    // they are variadic functions, so don't have parameter
+    // declarations. But fortunately we don't need them because we
+    // aren't going to refactor into these functions.
+    Finder->addMatcher
+        (callExpr
+         (hasAnyArgument
+          (ignoringImplicit(declRefExpr(hasType(isPointerToConstChar),
+                                        to(varDecl().bind("declaration of potential optional path"))
+                                        ).bind("use of potential optional path as argument to printf-style function"))),
+          hasDeclaration(functionDecl(anyOf(hasName("printf"),
+                                            hasName("fprintf"),
+                                            hasName("gmx_fatal")),
+                                      isVariadic()))
+          ).bind("call expression to printf-style function using potential optional path"),
+         this);
     // Match each argument of a function call that is the return value
     // from one of the optional-builder functions.
     Finder->addMatcher
@@ -341,7 +358,7 @@ void Opt2pathOptionalCheck::refactorFunctionCall(const Opt2pathOptionalCheck::Po
     if (isPrintfStyleFunctionCallExpr(useOfOptionalPath.callExpr_))
     {
         refactorUseOfOptionalPathInPrintfStyleFunctionCall(useOfOptionalPath.declRefExpr_,
-                                                   convertToPath);
+                                                           convertToPath);
     }
     else
     {
@@ -455,6 +472,33 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
     {
         const auto *parmVarDecl = Result.Nodes.getNodeAs<ParmVarDecl>("potential path parameter taking nullptr");
         paramDeclsReceivingNullptr_[parmVarDecl].push_back(nullptrExpr);
+    }
+    if (const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("call expression to printf-style function using potential optional path"))
+    {
+        const bool convertToPath = false;
+        const auto* varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of potential optional path");
+        // Most of these fields won't matter when the call expr is to a printf-style function
+        PossibleUseOfOptionalPath possibleUseOfOptionalPath{
+            convertToPath,
+            Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path as argument to printf-style function"),
+            nullptr,
+            nullptr,
+            callExpr,
+            nullptr
+        };
+        // If we find that the declaration of this variable is one of
+        // the known optional filenames (e.g. because it was assigned
+        // a value that was the return from an optional-builder
+        // function), then refactor the function call.
+        if (varDeclOfOptionalFilenames_.find(varDecl) != varDeclOfOptionalFilenames_.end())
+        {
+            refactorUseOfOptionalPathInPrintfStyleFunctionCall(possibleUseOfOptionalPath.declRefExpr_,
+                                                               possibleUseOfOptionalPath.convertToPath_);
+        }
+        else
+        {
+            possibleUsesOfOptionalPath_[varDecl].push_back(possibleUseOfOptionalPath);
+        }
     }
 }
  
