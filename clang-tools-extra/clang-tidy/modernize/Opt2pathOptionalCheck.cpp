@@ -95,7 +95,8 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
     // in the assertion, assuming that the only relevant cases are
     // testing whether an optional path has a value.
     auto assertionExpr = parenExpr
-        (hasDescendant(declRefExpr(to(functionDecl(hasName("__assert_fail"))))),
+        (anyOf(hasDescendant(declRefExpr(to(functionDecl(hasName("__assert_fail"))))),
+               hasDescendant(declRefExpr(to(functionDecl(hasName("assertHandler")))))),
          hasDescendant(declRefExpr(to(varDecl(hasType(isPointerToConstChar)).bind("declaration of variable referenced in assertion"))))
          ).bind("asssertion parenthesis expression");
     // Match each assertion within a compound statement
