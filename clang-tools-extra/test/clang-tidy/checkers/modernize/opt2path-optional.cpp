@@ -104,7 +104,16 @@ void functionTakingOptionalFile(int a, const char* thePath)
         functionNeedingAFile(thePath);
         // CHECK-MESSAGES: :[[@LINE-1]]:30: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
         // CHECK-FIXES: functionNeedingAFile(thePath.value());
+
+        std::filesystem::path thePathToUse = thePath;
+        // CHECK-MESSAGES: :[[@LINE-1]]:46: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: std::filesystem::path thePathToUse = thePath.value();
     }
+
+    assert(thePath);
+    std::filesystem::path anotherPathToUse = thePath;
+    // CHECK-MESSAGES: :[[@LINE-1]]:46: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: std::filesystem::path anotherPathToUse = thePath.value();
 }
 
 void functionWithCStringParameterTypeNotChanged(const char* fn, const char* message)
@@ -297,4 +306,30 @@ void functionUsingReturnValueFromBuilderAsArgument()
     anotherFunctionTakingOptionalFile(3, opt2fn_null(2, 4));
     // CHECK-MESSAGES: :[[@LINE-1]]:42: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
     // CHECK-FIXES: anotherFunctionTakingOptionalFile(3, opt2path_optional(2, 4));
+}
+
+void functionAssigningOptionalPathToPath()
+{
+    const char* aFile;
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Don't declare const char* variable that won't be used [modernize-opt2path-optional]
+    // CHECK-FIXES: ;
+    aFile = ftp2fn_null(3, 5);
+    // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: Use std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-MESSAGES: :[[@LINE-2]]:13: warning: Use ftp2path_optional instead of ftp2fn_null [modernize-opt2path-optional]
+    // CHECK-FIXES: std::optional<std::filesystem::path> aFile = ftp2path_optional(3, 5);
+
+    functionTakingOptionalFile(9, aFile);
+
+    // Call another function taking a path after checking a different condition
+    if (aFile)
+    {
+        std::filesystem::path thePathToUse = aFile;
+        // CHECK-MESSAGES: :[[@LINE-1]]:46: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES: std::filesystem::path thePathToUse = aFile.value();
+    }
+
+    assert(aFile);
+    std::filesystem::path aFileToUse = aFile;
+    // CHECK-MESSAGES: :[[@LINE-1]]:40: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: std::filesystem::path aFileToUse = aFile.value();
 }
