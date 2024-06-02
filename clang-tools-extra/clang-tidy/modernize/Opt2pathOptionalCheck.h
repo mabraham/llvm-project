@@ -28,6 +28,14 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
         void registerMatchers(ast_matchers::MatchFinder *Finder) override;
         void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
 
+        struct Comparison
+        {
+                // The binary operator expression to refactor (typically == or !=)
+                const BinaryOperator* checkForPath_;
+                // Whether the refactored code should test whether the
+                // value is present (otherwise test for not present).
+                bool testForValuePresent_;
+        };
     private:
         struct Assertion;
         struct PossibleUseOfOptionalPath;
@@ -41,6 +49,7 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
         std::unordered_set<const VarDecl*> varDeclOfOptionalFilenames_;
         std::unordered_map<const CompoundStmt*, std::vector<Assertion>> assertionsByEnclosingCompoundStmt_;
         std::unordered_map<const VarDecl*, std::vector<PossibleUseOfOptionalPath>> possibleUsesOfOptionalPath_;
+        std::unordered_map<const VarDecl*, std::vector<Comparison>> possibleUsesOfOptionalPathInComparisons_;
         // Collection of function parameters whose type was converted
         // to optional<path> or path.
         std::vector<ConvertedParameter> convertedParameters_;
@@ -59,6 +68,7 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
         void refactorUseOfOptionalPath(const DeclRefExpr *declRefExpr,
                                        const bool extractFromOptional,
                                        const BinaryOperator* binaryOperatorToRefactor);
+        void refactorBinaryOperatorIfApplicable(const VarDecl* varDecl);
         void refactorUseOfOptionalPathInPrintfStyleFunctionCall(const DeclRefExpr *declRefExpr,
                                                         bool convertToPath);
         void refactorFunctionDeclReceivingPath(bool convertToPath,

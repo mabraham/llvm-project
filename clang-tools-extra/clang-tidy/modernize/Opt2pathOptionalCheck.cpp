@@ -187,6 +187,36 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
            parmVarDecl().bind("possible function parameter receiving optional path"))
           ).bind("call expression using potential optional path"),
          this);
+    // Match code like 'if (thePath == nullptr) { return; } so that we
+    // can understand if a reference to thePath in the following scope
+    // is known to be valid. In practice, this works the same as an
+    // assertion.
+    Finder->addMatcher
+        (compoundStmt
+         (hasDescendant
+          (ifStmt
+           (hasCondition
+            (anyOf
+             // We want to refactor 'thePath == nullptr' to '!thePath'
+             (binaryOperator
+              (hasOperatorName("=="),
+               hasOperands
+               (ignoringImplicit(cxxNullPtrLiteralExpr()),
+                ignoringImplicit(declRefExpr(hasType(isPointerToConstChar),
+                                             to(varDecl().bind("declaration of potential optional path")))))
+               ).bind("check for invalid path to refactor"),
+              // No need to refactor if it's already '!thePath'
+              unaryOperator
+              (hasOperatorName("!"),
+               hasUnaryOperand
+               (ignoringImplicit(declRefExpr(hasType(isPointerToConstChar),
+                                             to(varDecl().bind("declaration of potential optional path")))))))),
+            hasThen
+            (anyOf(returnStmt(),
+                   hasDescendant(returnStmt())))
+            ).bind("possible if statement means optional has value in following scope")
+           )).bind("compound statement enclosing fast return"),
+         this);
     // Match calls to printf-style functions that take potential
     // optional paths as arguments. These don't match above because
     // they are variadic functions, so don't have parameter
@@ -391,6 +421,28 @@ bool isPrintfStyleFunctionCallExpr(const CallExpr* callExpr)
     return false;
 }
 
+void refactorBinaryOperator(const Opt2pathOptionalCheck::Comparison& comparison,
+                            const VarDecl* varDecl,
+                            ClangTidyCheck* check)
+{
+    const std::string variableName = varDecl->getNameAsString();
+    const std::string replacement = (comparison.testForValuePresent_ ? variableName : ("!" + variableName));
+    check->diag(comparison.checkForPath_->getBeginLoc(), "Use " + replacement + " instead of comparison with nullptr")
+        << FixItHint::CreateReplacement(comparison.checkForPath_->getSourceRange(), replacement);
+}
+
+void Opt2pathOptionalCheck::refactorBinaryOperatorIfApplicable(const VarDecl* varDecl)
+{
+    const auto comparisonsToRefactorIt = possibleUsesOfOptionalPathInComparisons_.find(varDecl);
+    if (comparisonsToRefactorIt != possibleUsesOfOptionalPathInComparisons_.end())
+    {
+        for (const auto comparison : comparisonsToRefactorIt->second)
+        {
+            refactorBinaryOperator(comparison, varDecl, this);
+        }
+    }
+}
+
 void Opt2pathOptionalCheck::refactorFunctionCall(const Opt2pathOptionalCheck::PossibleUseOfOptionalPath& useOfOptionalPath,
                                                  const bool convertToPath,
                                                  const VarDecl* varDeclToChange,
@@ -409,6 +461,7 @@ void Opt2pathOptionalCheck::refactorFunctionCall(const Opt2pathOptionalCheck::Po
                                                                  varDeclToChange,
                                                                  useOfOptionalPath.optionalCompoundStmt_,
                                                                  context);
+        refactorBinaryOperatorIfApplicable(varDeclToChange);
         refactorUseOfOptionalPath(useOfOptionalPath.declRefExpr_, extractFromOptional,
                                   useOfOptionalPath.possibleBinaryOperatorToRefactor_);
 
@@ -474,6 +527,26 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
         const auto *assertionParenExpr = Result.Nodes.getNodeAs<ParenExpr>("asssertion parenthesis expression");
         assertionsByEnclosingCompoundStmt_[compoundStmt].push_back
             ({assertionParenExpr->getEndLoc(), varDecl});
+    }
+    if (const auto *compoundStmt = Result.Nodes.getNodeAs<CompoundStmt>("compound statement enclosing fast return"))
+    {
+        const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of potential optional path");
+        const auto *ifStmt = Result.Nodes.getNodeAs<IfStmt>("possible if statement means optional has value in following scope");
+        assertionsByEnclosingCompoundStmt_[compoundStmt].push_back
+            ({ifStmt->getEndLoc(), varDecl});
+
+        if (const auto* checkForInvalidPath = Result.Nodes.getNodeAs<BinaryOperator>("check for invalid path to refactor"))
+        {
+            const bool testForValuePresent = false;
+            if (varDeclOfOptionalFilenames_.find(varDecl) != varDeclOfOptionalFilenames_.end())
+            {
+                refactorBinaryOperator({checkForInvalidPath, testForValuePresent}, varDecl, this);
+            }
+            else
+            {
+                possibleUsesOfOptionalPathInComparisons_[varDecl].push_back({checkForInvalidPath, testForValuePresent});
+            }
+        }
     }
     if (const auto *declRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path as function argument"))
     {

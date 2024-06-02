@@ -109,11 +109,50 @@ void functionTakingOptionalFile(int a, const char* thePath)
         // CHECK-MESSAGES: :[[@LINE-1]]:46: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
         // CHECK-FIXES: std::filesystem::path thePathToUse = thePath.value();
     }
+}
 
-    assert(thePath);
-    std::filesystem::path anotherPathToUse = thePath;
+// Check that function declarations are changed
+void functionTakingOptionalFileAndDoingFastReturn1(const char* thePathWithValue)
+// CHECK-MESSAGES: :[[@LINE-1]]:52: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
+// CHECK-FIXES: void functionTakingOptionalFileAndDoingFastReturn1(const std::optional<std::filesystem::path>& thePathWithValue)
+{
+    // Refactor this logic
+    if (thePathWithValue == nullptr)
+    // CHECK-MESSAGES:[[@LINE-1]]:9: warning: Use !thePathWithValue instead of comparison with nullptr [modernize-opt2path-optional]
+    {
+        return;
+    }
+
+    std::filesystem::path anotherPathToUse1 = thePathWithValue;
+    // CHECK-MESSAGES: :[[@LINE-1]]:47: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: std::filesystem::path anotherPathToUse1 = thePathWithValue.value();
+}
+
+// Check that function declarations are changed
+void functionTakingOptionalFileAndDoingFastReturn2(const char* thePathWithValue)
+// CHECK-MESSAGES: :[[@LINE-1]]:52: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
+// CHECK-FIXES: void functionTakingOptionalFileAndDoingFastReturn2(const std::optional<std::filesystem::path>& thePathWithValue)
+{
+    // Refactor this logic
+    if (!thePathWithValue)
+    {
+        return;
+    }
+
+    std::filesystem::path anotherPathToUse2 = thePathWithValue;
+    // CHECK-MESSAGES: :[[@LINE-1]]:47: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+    // CHECK-FIXES: std::filesystem::path anotherPathToUse2 = thePathWithValue.value();
+}
+
+// Check that function declarations are changed
+void functionTakingOptionalFileAndAssertingOnIt(const char* thePathWithValue)
+// CHECK-MESSAGES: :[[@LINE-1]]:49: warning: Change function parameter to const std::optional<std::filesystem::path>& [modernize-opt2path-optional]
+// CHECK-FIXES: void functionTakingOptionalFileAndAssertingOnIt(const std::optional<std::filesystem::path>& thePathWithValue)
+{
+    assert(thePathWithValue);
+    std::filesystem::path anotherPathToUse = thePathWithValue;
     // CHECK-MESSAGES: :[[@LINE-1]]:46: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
-    // CHECK-FIXES: std::filesystem::path anotherPathToUse = thePath.value();
+    // CHECK-FIXES: std::filesystem::path anotherPathToUse = thePathWithValue.value();
 }
 
 void functionWithCStringParameterTypeNotChanged(const char* fn, const char* message)
@@ -295,7 +334,6 @@ void anotherFunctionTakingOptionalFile(int a, const char* anotherPath)
         // CHECK-MESSAGES: :[[@LINE-1]]:38: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
         // CHECK-FIXES: existingFunctionNeedingAFile(anotherPath.value());
     }
-
 }
 
 void functionUsingReturnValueFromBuilderAsArgument()
@@ -320,12 +358,23 @@ void functionAssigningOptionalPathToPath()
 
     functionTakingOptionalFile(9, aFile);
 
+    functionTakingOptionalFileAndAssertingOnIt(aFile);
+    functionTakingOptionalFileAndDoingFastReturn1(aFile);
+    functionTakingOptionalFileAndDoingFastReturn2(aFile);
+
     // Call another function taking a path after checking a different condition
     if (aFile)
     {
         std::filesystem::path thePathToUse = aFile;
         // CHECK-MESSAGES: :[[@LINE-1]]:46: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
         // CHECK-FIXES: std::filesystem::path thePathToUse = aFile.value();
+    }
+
+    // Refactor this logic
+    if (aFile == nullptr)
+    // CHECK-MESSAGES:[[@LINE-1]]:9: warning: Use !aFile instead of comparison with nullptr [modernize-opt2path-optional]
+    {
+        return;
     }
 
     assert(aFile);
