@@ -378,6 +378,7 @@ void functionAssigningOptionalPathToPath()
     // Refactor this logic
     if (aFile == nullptr)
     // CHECK-MESSAGES:[[@LINE-1]]:9: warning: Use !aFile instead of comparison with nullptr [modernize-opt2path-optional]
+    // CHECK-FIXES: if (!aFile)
     {
         return;
     }
