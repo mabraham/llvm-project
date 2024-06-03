@@ -177,7 +177,7 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                      // condition means the optional is known to
                      // have a value.
                      optionally(inBodyOfIfStmt)
-                     ).bind("use of potential optional path"));
+                     ).bind("use of potential optional path as argument"));
     // Match each argument of a function call that is a variable that
     // is a potential optional path. Explore the surrounding context
     // for clues about whether the variable is known to be
@@ -558,7 +558,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             }
         }
     }
-    if (const auto *declRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path"))
+    if (const auto *declRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path as argument"))
     {
         const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of potential optional path");
         const bool convertToPath = Result.Nodes.getNodeAs<IfStmt>("possible if condition means optional has value");
