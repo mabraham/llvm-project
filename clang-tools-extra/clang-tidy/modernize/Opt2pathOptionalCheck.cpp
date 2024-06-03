@@ -387,7 +387,6 @@ void Opt2pathOptionalCheck::refactorUseOfOptionalPath(const DeclRefExpr *declRef
 // Refactors the declarations of functions *called* from this one
 void Opt2pathOptionalCheck::refactorFunctionDeclReceivingPath(const bool convertToPath,
                                                               const ParmVarDecl* parmVarDeclToChange,
-                                                              const CallExpr* callExpr,
                                                               ASTContext *context)
 {
     if (parmVarDeclToChange)
@@ -468,7 +467,6 @@ void Opt2pathOptionalCheck::refactorFunctionCall(const Opt2pathOptionalCheck::Po
         // Then refactor function calls that receive that parameter
         refactorFunctionDeclReceivingPath(convertToPath || extractFromOptional,
                                           useOfOptionalPath.optionalParmVarDeclToChange_,
-                                          useOfOptionalPath.callExpr_,
                                           context);
     }
 }
@@ -575,12 +573,12 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
         }
     }
     // Refactor function f that was called like f(opt2fn_null(args))
-    if (const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("call expression using optional path from builder"))
+    if (Result.Nodes.getNodeAs<CallExpr>("call expression using optional path from builder"))
     {
         const auto *parmVarDeclToChange = Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path");
         // Then we refactor the function that is called
         const bool convertToPath = false;
-        refactorFunctionDeclReceivingPath(convertToPath, parmVarDeclToChange, callExpr, Result.Context);
+        refactorFunctionDeclReceivingPath(convertToPath, parmVarDeclToChange, Result.Context);
     }
     if (const auto *nullptrExpr = Result.Nodes.getNodeAs<Expr>("nullptr to potentially replace"))
     {

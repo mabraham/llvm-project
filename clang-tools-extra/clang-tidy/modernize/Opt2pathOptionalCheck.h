@@ -73,7 +73,6 @@ class Opt2pathOptionalCheck : public ClangTidyCheck {
                                                         bool convertToPath);
         void refactorFunctionDeclReceivingPath(bool convertToPath,
                                                const ParmVarDecl* parmVarDeclToChange,
-                                               const CallExpr* callExpr,
                                                ASTContext *context);
 
         void onEndOfTranslationUnit() final;
