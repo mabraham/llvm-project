@@ -294,7 +294,12 @@ void functionUsingClassObject()
     // CHECK-MESSAGES: :[[@LINE-2]]:15: warning: Use opt2path_optional instead of opt2fn_null [modernize-opt2path-optional]
     // CHECK-FIXES: std::optional<std::filesystem::path> thePath = opt2path_optional(1, 2);
 
-    StructWithConstructorTakingPath obj(thePath);
+    if (thePath)
+    {
+        StructWithConstructorTakingPath obj(thePath);
+        // CHECK-MESSAGES: :[[@LINE-1]]:45: warning: Extract std::filesystem::path from std::optional<std::filesystem::path> [modernize-opt2path-optional]
+        // CHECK-FIXES StructWithConstructorTakingPath obj(thePath.value());
+    }
 }
 
 // TODO this should not be refactored, but it is harmless

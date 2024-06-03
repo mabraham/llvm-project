@@ -156,6 +156,28 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
                                ))
                ))).bind("possible if condition means optional has value")
             ))));
+    const auto argRefersToOptionalPathOptionallyWithinAContext =
+        // The most frequent cases to match are when a function is
+        // passed a reference to a variable whose type is const char
+        // *.  We also need to match on calls to functions already
+        // taking std::filesystem::path, which triggers an implicit
+        // call to a std::string constructor when "passed" a const
+        // char *. The simplest approach is to configure the AST
+        // traversal to ignore all implicit nodes, like casts and
+        // implicit constructor calls.
+        traverse
+        (TK_IgnoreUnlessSpelledInSource,
+         declRefExpr(hasType(isPointerToConstChar),
+                     to(varDecl().bind("declaration of potential optional path")),
+                     optionally
+                     // Used to find assertions that mean that the
+                     // optional is known to have a value.
+                     (hasAncestor(compoundStmt().bind("optional ancestor compound statement"))),
+                     // Used to find whether an if statement
+                     // condition means the optional is known to
+                     // have a value.
+                     optionally(inBodyOfIfStmt)
+                     ).bind("use of potential optional path"));
     // Match each argument of a function call that is a variable that
     // is a potential optional path. Explore the surrounding context
     // for clues about whether the variable is known to be
@@ -164,28 +186,21 @@ void Opt2pathOptionalCheck::registerMatchers(MatchFinder *Finder) {
     Finder->addMatcher
         (callExpr
          (forEachArgumentWithParam
-          // The most frequent cases to match are when a function is
-          // passed a reference to a variable whose type is const char
-          // *.  We also need to match on calls to functions already
-          // taking std::filesystem::path, which triggers an implicit
-          // call to a std::string constructor when "passed" a const
-          // char *. The simplest approach is to configure the AST
-          // traversal to ignore all implicit nodes, like casts and
-          // implicit constructor calls.
-          (traverse
-           (TK_IgnoreUnlessSpelledInSource,
-            declRefExpr(hasType(isPointerToConstChar),
-                        to(varDecl().bind("declaration of potential optional path")),
-                        optionally
-                        // Used to find assertions that mean that the
-                        // optional is known to have a value.
-                        (hasAncestor(compoundStmt().bind("optional ancestor compound statement"))),
-                        // Used to find whether an if statement
-                        // condition means the optional is known to
-                        // have a value.
-                        optionally(inBodyOfIfStmt)).bind("use of potential optional path as function argument")),
+          (argRefersToOptionalPathOptionallyWithinAContext,
            parmVarDecl().bind("possible function parameter receiving optional path"))
-          ).bind("call expression using potential optional path"),
+          ).bind("expression using potential optional path"),
+         this);
+    // Match each argument of a constructor call that is a variable that
+    // is a potential optional path. Explore the surrounding context
+    // for clues about whether the variable is known to be
+    // valid. These can be used later when we learn that the variable
+    // actually is an optional path.
+    Finder->addMatcher
+        (cxxConstructExpr
+         (forEachArgumentWithParam
+          (argRefersToOptionalPathOptionallyWithinAContext,
+           parmVarDecl().bind("possible function parameter receiving optional path"))
+          ).bind("expression using potential optional path"),
          this);
     // Match code like 'if (thePath == nullptr) { return; } so that we
     // can understand if a reference to thePath in the following scope
@@ -293,8 +308,8 @@ struct Opt2pathOptionalCheck::PossibleUseOfOptionalPath
         const DeclRefExpr* declRefExpr_;
         const CompoundStmt* optionalCompoundStmt_;
         const ParmVarDecl* optionalParmVarDeclToChange_;
-        // TODO only used in debug
-        const CallExpr* callExpr_;
+        const Expr* expr_; // Only used for debug printf
+        const CallExpr* callExpr_; // Used when the use of a variable really was in a call expression
         const BinaryOperator* possibleBinaryOperatorToRefactor_;
 };
 
@@ -546,16 +561,22 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             }
         }
     }
-    if (const auto *declRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path as function argument"))
+    if (const auto *declRefExpr = Result.Nodes.getNodeAs<DeclRefExpr>("use of potential optional path"))
     {
         const auto *varDecl = Result.Nodes.getNodeAs<VarDecl>("declaration of potential optional path");
         const bool convertToPath = Result.Nodes.getNodeAs<IfStmt>("possible if condition means optional has value");
+        // The match could be e.g. from a constructor call, which is
+        // not a CallExpr. If so, avoid refactoring the declaration of
+        // the parameter.
+        const auto *callExpr = Result.Nodes.getNodeAs<CallExpr>("expression using potential optional path");
+        const ParmVarDecl *parmVarDecl = callExpr ? Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path") : nullptr;
         PossibleUseOfOptionalPath possibleUseOfOptionalPath{
             convertToPath,
             declRefExpr,
             Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement"),
-            Result.Nodes.getNodeAs<ParmVarDecl>("possible function parameter receiving optional path"),
-            Result.Nodes.getNodeAs<CallExpr>("call expression using potential optional path"),
+            parmVarDecl,
+            Result.Nodes.getNodeAs<Expr>("expression using potential optional path"),
+            callExpr,
             Result.Nodes.getNodeAs<BinaryOperator>("possible binary operator to refactor")
         };
         // If we find that the declaration of this variable is one of
@@ -596,6 +617,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             nullptr,
             nullptr,
             callExpr,
+            callExpr,
             nullptr
         };
         // If we find that the declaration of this variable is one of
@@ -622,6 +644,7 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             convertToPath,
             declRefExpr,
             Result.Nodes.getNodeAs<CompoundStmt>("optional ancestor compound statement"),
+            nullptr,
             nullptr,
             nullptr,
             possibleBinaryOperator
