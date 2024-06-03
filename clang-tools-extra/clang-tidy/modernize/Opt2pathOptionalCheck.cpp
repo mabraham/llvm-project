@@ -576,11 +576,6 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             callExpr,
             Result.Nodes.getNodeAs<Expr>("possible binary operator expression to refactor")
         };
-        // If we find that the declaration of this variable is one of
-        // the known optional filenames (e.g. because it was assigned
-        // a value that was the return from an optional-builder
-        // function), then refactor the function that receives the
-        // variable as an argument.
         if (varDeclOfOptionalFilenames_.find(varDecl) != varDeclOfOptionalFilenames_.end())
         {
             refactorFunctionCall(possibleUseOfOptionalPath, convertToPath, varDecl, Result.Context);
@@ -611,11 +606,6 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             nullptr,
             binaryOperator
         };
-        // If we find that the declaration of this variable is one of
-        // the known optional filenames (e.g. because it was assigned
-        // a value that was the return from an optional-builder
-        // function), then refactor the function that receives the
-        // variable as an argument.
         if (varDeclOfOptionalFilenames_.find(varDecl) != varDeclOfOptionalFilenames_.end())
         {
             refactorFunctionCall(possibleUseOfOptionalPath, convertToPath, varDecl, Result.Context);
@@ -652,10 +642,6 @@ void Opt2pathOptionalCheck::check(const MatchFinder::MatchResult &Result)
             callExpr,
             nullptr
         };
-        // If we find that the declaration of this variable is one of
-        // the known optional filenames (e.g. because it was assigned
-        // a value that was the return from an optional-builder
-        // function), then refactor the function call.
         if (varDeclOfOptionalFilenames_.find(varDecl) != varDeclOfOptionalFilenames_.end())
         {
             refactorUseOfOptionalPathInPrintfStyleFunctionCall(possibleUseOfOptionalPath.declRefExpr_,
